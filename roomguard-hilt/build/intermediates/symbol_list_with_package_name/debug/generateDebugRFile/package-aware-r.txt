@@ -1,0 +1,1 @@
+dev.dhanfinix.roomguard.hilt
