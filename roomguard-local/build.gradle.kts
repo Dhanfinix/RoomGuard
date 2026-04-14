@@ -26,6 +26,11 @@ android {
 dependencies {
     api(project(":roomguard-core"))
     implementation(libs.kotlinx.coroutines.android)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.kotlin.reflect)
 }
 
 afterEvaluate {

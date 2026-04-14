@@ -37,13 +37,29 @@ android {
 dependencies {
     api(project(":roomguard-core"))
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.androidx.datastore.preferences)
+    api(libs.androidx.datastore.preferences)
     implementation(libs.google.api.drive)
     api(libs.google.play.auth)
     implementation(libs.google.auth)
     implementation(libs.google.http.client.gson)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services)
+    
+    testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.kotlin.reflect)
+    testImplementation(libs.androidx.test.core)
+    testImplementation("org.robolectric:robolectric:4.13")
+}
+
+android {
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 afterEvaluate {

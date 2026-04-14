@@ -30,8 +30,8 @@ android {
 
 dependencies {
     api(project(":roomguard-core"))
-    api(project(":roomguard-drive"))
-    api(project(":roomguard-local"))
+    implementation(project(":roomguard-drive"))
+    implementation(project(":roomguard-local"))
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.material3)
@@ -45,6 +45,11 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.kotlin.reflect)
 }
 
 afterEvaluate {

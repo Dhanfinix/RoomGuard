@@ -8,6 +8,8 @@ import androidx.credentials.CredentialManager
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.auth.api.identity.AuthorizationClient
+import com.google.android.gms.auth.api.identity.SignInClient
 import com.google.android.gms.auth.api.identity.ClearTokenRequest
 import com.google.android.gms.auth.api.identity.RevokeAccessRequest
 import com.google.android.gms.common.api.Scope
@@ -42,7 +44,9 @@ class RoomGuardDrive(
     private val appName: String,
     private val databaseProvider: DatabaseProvider,
     private val tokenStore: DriveTokenStore,
-    private val config: RoomGuardConfig = RoomGuardConfig()
+    private val config: RoomGuardConfig = RoomGuardConfig(),
+    private val authClient: AuthorizationClient = Identity.getAuthorizationClient(context),
+    private val signInClient: SignInClient = Identity.getSignInClient(context)
 ) : DriveBackupManager {
 
     companion object {
@@ -56,7 +60,6 @@ class RoomGuardDrive(
         private const val TAG_RESTORE = "RoomGuard:Restore"
     }
 
-    private val authClient = Identity.getAuthorizationClient(context)
 
     // ── Authorization (not part of core interface) ─────────────────────────────
 
@@ -378,7 +381,8 @@ class RoomGuardDrive(
 
         // 2. Sign out from Identity (forces account picker on next auth)
         try {
-            Identity.getSignInClient(context).signOut().await()
+            @Suppress("DEPRECATION")
+            signInClient.signOut().await()
         } catch (e: Exception) {
             Log.e("RoomGuard:Revoke", "Identity sign out failed", e)
         }
@@ -414,7 +418,8 @@ class RoomGuardDrive(
         
         // Clear Identity session so account picker shows up next time
         try {
-            Identity.getSignInClient(context).signOut().await()
+            @Suppress("DEPRECATION")
+            signInClient.signOut().await()
         } catch (_: Exception) {}
 
         // Clear Credential Manager state
