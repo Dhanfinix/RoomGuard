@@ -1233,11 +1233,12 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import dev.dhanfinix.roomguard.RoomGuard
 import dev.dhanfinix.roomguard.core.DatabaseProvider
 import dev.dhanfinix.roomguard.core.DriveBackupManager
+import dev.dhanfinix.roomguard.core.RoomGuardConfig
+import dev.dhanfinix.roomguard.core.CsvSerializer
 import dev.dhanfinix.roomguard.drive.DriveTokenStore
-import dev.dhanfinix.roomguard.drive.RoomGuardDrive
-import dev.dhanfinix.roomguard.drive.token.DataStoreDriveTokenStore
 import javax.inject.Named
 import javax.inject.Singleton
 
@@ -1245,26 +1246,31 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object RoomGuardDriveModule {
 
-    @Provides
-    @Singleton
-    fun provideDriveTokenStore(
-        @ApplicationContext context: Context
-    ): DriveTokenStore = DataStoreDriveTokenStore(context)
-
     /**
-     * Provide [DriveBackupManager] with host-supplied [DatabaseProvider] and app name.
-     * The host must bind [DatabaseProvider] in their own Hilt module.
-     *
-     * @Named("appName") — host must provide a String with this qualifier
+     * Build the shared RoomGuard facade once, then expose the Drive side from it.
+     * The host only needs to provide [appName] once; the Local file prefix is derived
+     * automatically unless the builder overrides it.
      */
     @Provides
     @Singleton
-    fun provideDriveBackupManager(
+    fun provideRoomGuard(
         @ApplicationContext context: Context,
         @Named("appName") appName: String,
         databaseProvider: DatabaseProvider,
-        tokenStore: DriveTokenStore
-    ): DriveBackupManager = RoomGuardDrive(context, appName, databaseProvider, tokenStore)
+        serializer: CsvSerializer,
+        tokenStore: DriveTokenStore,
+        config: RoomGuardConfig
+    ): RoomGuard = RoomGuard.Builder(context)
+        .appName(appName)
+        .databaseProvider(databaseProvider)
+        .tokenStore(tokenStore)
+        .csvSerializer(serializer)
+        .config(config)
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideDriveBackupManager(roomGuard: RoomGuard): DriveBackupManager = roomGuard.driveManager
 }
 ```
 
@@ -1275,16 +1281,12 @@ object RoomGuardDriveModule {
 ```kotlin
 package dev.dhanfinix.roomguard.hilt
 
-import android.content.Context
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import dev.dhanfinix.roomguard.core.CsvSerializer
+import dev.dhanfinix.roomguard.RoomGuard
 import dev.dhanfinix.roomguard.core.LocalBackupManager
-import dev.dhanfinix.roomguard.local.RoomGuardLocal
-import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -1292,18 +1294,11 @@ import javax.inject.Singleton
 object RoomGuardLocalModule {
 
     /**
-     * Provide [LocalBackupManager] with host-supplied [CsvSerializer] and optional file prefix.
-     * The host must bind [CsvSerializer] in their own Hilt module.
-     *
-     * @Named("csvFilePrefix") — optional, host can provide a String, e.g. "myapp_backup"
+     * Bind the Local side from the shared RoomGuard instance.
      */
     @Provides
     @Singleton
-    fun provideLocalBackupManager(
-        @ApplicationContext context: Context,
-        serializer: CsvSerializer,
-        @Named("csvFilePrefix") filePrefix: String = "roomguard_backup"
-    ): LocalBackupManager = RoomGuardLocal(context, serializer, filePrefix)
+    fun provideLocalBackupManager(roomGuard: RoomGuard): LocalBackupManager = roomGuard.localManager
 }
 ```
 
@@ -1881,8 +1876,14 @@ class NoteCsvSerializer(private val dao: NoteDao) : CsvSerializer {
 // Manual wiring (no Hilt in sample)
 val tokenStore = DataStoreDriveTokenStore(this)
 val dbProvider = NoteDatabaseProvider(this, NoteDatabase.getInstance(this))
-val driveManager = RoomGuardDrive(this, getString(R.string.app_name), dbProvider, tokenStore)
-val localManager = RoomGuardLocal(this, NoteCsvSerializer(db.noteDao()), filePrefix = "notes_backup")
+val roomGuard = RoomGuard.Builder(this)
+    .appName(getString(R.string.app_name))
+    .databaseProvider(dbProvider)
+    .tokenStore(tokenStore)
+    .csvSerializer(NoteCsvSerializer(db.noteDao()))
+    .build()
+val driveManager = roomGuard.driveManager
+val localManager = roomGuard.localManager
 val restoreConfig = RestoreConfig(tables = listOf("notes"), mode = RestoreMode.ATTACH)
 
 setContent {
@@ -1907,7 +1908,7 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "RoomGuard"
-include(":roomguard-core", ":roomguard-drive", ":roomguard-local", ":roomguard-hilt", ":roomguard-ui", ":app")
+include(":roomguard-core", ":roomguard-drive", ":roomguard-local", ":roomguard", ":roomguard-hilt", ":roomguard-ui", ":app")
 ```
 
 ### Root `build.gradle.kts`
@@ -1961,6 +1962,7 @@ jobs:
             :roomguard-core:publishReleasePublicationToGitHubPackagesRepository \
             :roomguard-drive:publishReleasePublicationToGitHubPackagesRepository \
             :roomguard-local:publishReleasePublicationToGitHubPackagesRepository \
+            :roomguard:publishReleasePublicationToGitHubPackagesRepository \
             :roomguard-hilt:publishReleasePublicationToGitHubPackagesRepository \
             :roomguard-ui:publishReleasePublicationToGitHubPackagesRepository
         env:
@@ -2009,9 +2011,7 @@ dependencyResolutionManagement {
 ```kotlin
 // build.gradle.kts (:app)
 dependencies {
-    implementation("dev.dhanfinix.roomguard:roomguard-core:1.0.0")
-    implementation("dev.dhanfinix.roomguard:roomguard-drive:1.0.0")   // Drive backup
-    implementation("dev.dhanfinix.roomguard:roomguard-local:1.0.0")   // CSV backup
+    implementation("dev.dhanfinix.roomguard:roomguard:1.0.0")          // Shared facade
     implementation("dev.dhanfinix.roomguard:roomguard-ui:1.0.0")      // Pre-built Compose screen
     implementation("dev.dhanfinix.roomguard:roomguard-hilt:1.0.0")    // Optional Hilt wiring
 }
@@ -2026,9 +2026,15 @@ class MyCsvSerializer(dao: MyDao) : CsvSerializer { ... }
 ### Step 4: Wire up
 ```kotlin
 // Manual (no Hilt)
-val tokenStore     = DataStoreDriveTokenStore(context)
-val driveManager   = RoomGuardDrive(context, "MyApp", MyDatabaseProvider(context, db), tokenStore)
-val localManager   = RoomGuardLocal(context, MyCsvSerializer(dao), filePrefix = "myapp_backup")
+val tokenStore = DataStoreDriveTokenStore(context)
+val roomGuard = RoomGuard.Builder(context)
+    .appName("MyApp")
+    .databaseProvider(MyDatabaseProvider(context, db))
+    .tokenStore(tokenStore)
+    .csvSerializer(MyCsvSerializer(dao))
+    .build()
+val driveManager = roomGuard.driveManager
+val localManager = roomGuard.localManager
 val restoreConfig  = RestoreConfig(tables = listOf("my_table"), mode = RestoreMode.ATTACH)
 ```
 

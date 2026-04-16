@@ -55,9 +55,7 @@ android {
 
 dependencies {
     // RoomGuard modules
-    implementation(project(":roomguard-core"))
-    implementation(project(":roomguard-drive"))
-    implementation(project(":roomguard-local"))
+    implementation(project(":roomguard"))
     implementation(project(":roomguard-ui"))
 
     // AndroidX

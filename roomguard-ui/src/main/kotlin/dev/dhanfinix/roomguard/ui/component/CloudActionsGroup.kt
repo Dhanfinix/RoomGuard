@@ -7,6 +7,7 @@ import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.LinkOff
 import androidx.compose.material.icons.outlined.RestorePage
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -22,6 +23,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun CloudActionsGroup(
     isDriveAuthorized: Boolean,
+    isCheckingConnection: Boolean,
     isProcessing: Boolean,
     onConnect: () -> Unit,
     onBackup: () -> Unit,
@@ -48,91 +50,115 @@ fun CloudActionsGroup(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            AnimatedContent(
-                targetState = isDriveAuthorized,
-                transitionSpec = {
-                    fadeIn() + slideInVertically() togetherWith fadeOut() + slideOutVertically()
-                },
-                label = "cloud_actions"
-            ) { authorized ->
-                if (authorized) {
-                    // Connected state: Backup, Restore, Disconnect
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            if (isCheckingConnection) {
+                FilledTonalButton(
+                    onClick = onConnect,
+                    enabled = false,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Sync,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Checking Google Drive...",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            } else {
+                AnimatedContent(
+                    targetState = isDriveAuthorized,
+                    transitionSpec = {
+                        fadeIn() + slideInVertically() togetherWith fadeOut() + slideOutVertically()
+                    },
+                    label = "cloud_actions"
+                ) { authorized ->
+                    if (authorized) {
+                        // Connected state: Backup, Restore, Disconnect
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            ActionButton(
-                                text = "Backup Now",
-                                icon = Icons.Outlined.Backup,
-                                onClick = onBackup,
-                                enabled = !isProcessing,
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ActionButton(
+                                    text = "Backup Now",
+                                    icon = Icons.Outlined.Backup,
+                                    onClick = onBackup,
+                                    enabled = !isProcessing,
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
                                 )
-                            )
 
-                            ActionButton(
-                                text = "Restore",
-                                icon = Icons.Outlined.RestorePage,
-                                onClick = onRestore,
-                                enabled = !isProcessing,
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                ActionButton(
+                                    text = "Restore",
+                                    icon = Icons.Outlined.RestorePage,
+                                    onClick = onRestore,
+                                    enabled = !isProcessing,
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
                                 )
-                            )
+                            }
+
+                            TextButton(
+                                onClick = onRevoke,
+                                enabled = !isProcessing,
+                                modifier = Modifier.align(Alignment.End),
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.LinkOff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Disconnect Drive",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
-
-                        TextButton(
-                            onClick = onRevoke,
+                    } else {
+                        // Not connected: Show connect button
+                        FilledTonalButton(
+                            onClick = onConnect,
                             enabled = !isProcessing,
-                            modifier = Modifier.align(Alignment.End),
-                            colors = ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         ) {
                             Icon(
-                                imageVector = Icons.Outlined.LinkOff,
+                                imageVector = Icons.Outlined.CloudDone,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.error
+                                modifier = Modifier.size(18.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Disconnect Drive",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.error
+                                text = "Connect Google Drive",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
-                    }
-                } else {
-                    // Not connected: Show connect button
-                    FilledTonalButton(
-                        onClick = onConnect,
-                        enabled = !isProcessing,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.CloudDone,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Connect Google Drive",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold
-                        )
                     }
                 }
             }

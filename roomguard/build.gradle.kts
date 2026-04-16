@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.dhanfinix.roomguard.local"
+    namespace = "dev.dhanfinix.roomguard"
     compileSdk = 36
 
     defaultConfig {
@@ -25,13 +25,12 @@ android {
 
 dependencies {
     api(project(":roomguard-core"))
-    testImplementation(project(":roomguard"))
-    implementation(libs.kotlinx.coroutines.android)
+    api(project(":roomguard-drive"))
+    api(project(":roomguard-local"))
+    api(libs.google.play.auth)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
-    testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.kotlin.reflect)
 }
 
 afterEvaluate {
@@ -40,7 +39,7 @@ afterEvaluate {
             create<MavenPublication>("release") {
                 from(components["release"])
                 groupId = "dev.dhanfinix.roomguard"
-                artifactId = "roomguard-local"
+                artifactId = "roomguard"
                 version = "1.0.0"
             }
         }

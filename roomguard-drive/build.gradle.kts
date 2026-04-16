@@ -36,6 +36,7 @@ android {
 
 dependencies {
     api(project(":roomguard-core"))
+    testImplementation(project(":roomguard"))
     implementation(libs.kotlinx.coroutines.android)
     api(libs.androidx.datastore.preferences)
     implementation(libs.google.api.drive)

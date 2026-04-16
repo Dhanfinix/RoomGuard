@@ -127,6 +127,51 @@ class RoomGuardBackupViewModelTest {
     }
 
     @Test
+    fun `exportLocal csv emits share event with csv mime type`() = runTest {
+        coEvery { mockLocalManager.exportLocalBackup(LocalBackupFormat.CSV) } returns BackupResult.Success(
+            "/tmp/test.csv"
+        )
+
+        val events = mutableListOf<BackupUiEvent>()
+        val job = launch(UnconfinedTestDispatcher()) {
+            viewModel.events.collect { events.add(it) }
+        }
+
+        viewModel.onAction(BackupScreenAction.ExportLocal(LocalBackupFormat.CSV))
+        advanceUntilIdle()
+
+        coVerify { mockLocalManager.exportLocalBackup(LocalBackupFormat.CSV) }
+        val event = events.filterIsInstance<BackupUiEvent.ShareFile>().first()
+        assertEquals("/tmp/test.csv", event.filePath)
+        assertEquals("text/csv", event.mimeType)
+
+        job.cancel()
+    }
+
+    @Test
+    fun `saveLocal compressed emits save event with gzip mime type`() = runTest {
+        coEvery { mockLocalManager.exportLocalBackup(LocalBackupFormat.COMPRESSED) } returns BackupResult.Success(
+            "/tmp/test.csv.gz"
+        )
+
+        val events = mutableListOf<BackupUiEvent>()
+        val job = launch(UnconfinedTestDispatcher()) {
+            viewModel.events.collect { events.add(it) }
+        }
+
+        viewModel.onAction(BackupScreenAction.SaveLocalToDevice(LocalBackupFormat.COMPRESSED))
+        advanceUntilIdle()
+
+        coVerify { mockLocalManager.exportLocalBackup(LocalBackupFormat.COMPRESSED) }
+        val event = events.filterIsInstance<BackupUiEvent.SaveFileToDevice>().first()
+        assertEquals("test.csv.gz", event.fileName)
+        assertEquals("/tmp/test.csv.gz", event.filePath)
+        assertEquals("application/gzip", event.mimeType)
+
+        job.cancel()
+    }
+
+    @Test
     fun `backup failures with AUTH_EXPIRED reset authorized state`() = runTest {
         // Ensure we start as authorized
         coEvery { mockDriveManager.isDriveAuthorized(any()) } returns true

@@ -49,9 +49,9 @@ class RoomGuardBackupViewModel(
             is BackupScreenAction.Restore          -> onRestoreRequested(action.strategy)
             is BackupScreenAction.AuthResult       -> handleAuthResult(action.token, action.error)
             is BackupScreenAction.AuthFailed       -> handleAuthResult(null, action.error)
-            is BackupScreenAction.ExportCsv        -> exportCsv()
-            is BackupScreenAction.SaveCsvToDevice  -> saveCsvToDevice()
-            is BackupScreenAction.ImportCsv        -> onImportRequested(action.uri, action.strategy)
+            is BackupScreenAction.ExportLocal -> exportLocal(action.format)
+            is BackupScreenAction.SaveLocalToDevice -> saveLocalToDevice(action.format)
+            is BackupScreenAction.ImportLocal -> onImportRequested(action.uri, action.strategy)
         }
     }
 
@@ -198,27 +198,28 @@ class RoomGuardBackupViewModel(
 
     // ── CSV Export / Import ────────────────────────────────────────────────────
 
-    private fun exportCsv() {
-        setProcessing(true, "Preparing file...")
+    private fun exportLocal(format: LocalBackupFormat) {
+        setProcessing(true, "Preparing ${format.title}...")
         viewModelScope.launch {
-            when (val result = localManager.exportToCsv()) {
-                is BackupResult.Success -> _events.emit(BackupUiEvent.ShareFile(result.data))
+            when (val result = localManager.exportLocalBackup(format)) {
+                is BackupResult.Success -> _events.emit(BackupUiEvent.ShareFile(result.data, format.mimeType))
                 is BackupResult.Error   -> showError(result.message)
             }
             setProcessing(false)
         }
     }
 
-    private fun saveCsvToDevice() {
-        setProcessing(true, "Preparing data...")
+    private fun saveLocalToDevice(format: LocalBackupFormat) {
+        setProcessing(true, "Preparing ${format.title}...")
         viewModelScope.launch {
-            when (val result = localManager.exportToCsv()) {
+            when (val result = localManager.exportLocalBackup(format)) {
                 is BackupResult.Success -> {
                     val file = java.io.File(result.data)
                     _events.emit(
                         BackupUiEvent.SaveFileToDevice(
                             fileName = file.name,
-                            filePath = result.data
+                            filePath = result.data,
+                            mimeType = format.mimeType
                         )
                     )
                 }
@@ -244,7 +245,7 @@ class RoomGuardBackupViewModel(
     private fun importCsv(uri: String, strategy: RestoreStrategy) {
         setProcessing(true, "Importing data...")
         viewModelScope.launch {
-            when (val result = localManager.importFromCsv(uri, strategy)) {
+            when (val result = localManager.importFromLocal(uri, strategy)) {
                 is BackupResult.Success -> showSuccess(result.data.message)
                 is BackupResult.Error   -> showError(result.message)
             }
@@ -379,15 +380,15 @@ sealed interface BackupScreenAction {
     data class Restore(val strategy: RestoreStrategy? = null) : BackupScreenAction
     data class AuthResult(val token: String?, val error: String? = null) : BackupScreenAction
     data class AuthFailed(val error: String? = null) : BackupScreenAction
-    data object ExportCsv : BackupScreenAction
-    data object SaveCsvToDevice : BackupScreenAction
-    data class ImportCsv(val uri: String, val strategy: RestoreStrategy? = null) : BackupScreenAction
+    data class ExportLocal(val format: LocalBackupFormat) : BackupScreenAction
+    data class SaveLocalToDevice(val format: LocalBackupFormat) : BackupScreenAction
+    data class ImportLocal(val uri: String, val strategy: RestoreStrategy? = null) : BackupScreenAction
 }
 
 sealed interface BackupUiEvent {
     data class LaunchDriveAuth(val pendingIntent: android.app.PendingIntent) : BackupUiEvent
-    data class ShareFile(val filePath: String) : BackupUiEvent
-    data class SaveFileToDevice(val fileName: String, val filePath: String) : BackupUiEvent
+    data class ShareFile(val filePath: String, val mimeType: String) : BackupUiEvent
+    data class SaveFileToDevice(val fileName: String, val filePath: String, val mimeType: String) : BackupUiEvent
     data class ShowMessage(val message: String, val isError: Boolean) : BackupUiEvent
     data class ConfirmOverwriteRemote(val onConfirm: () -> Unit) : BackupUiEvent
     data class ConfirmOverwriteLocal(val onConfirm: () -> Unit) : BackupUiEvent

@@ -60,6 +60,11 @@ class RoomGuardDrive(
         private const val TAG_RESTORE = "RoomGuard:Restore"
     }
 
+    private data class RemoteBackupFile(
+        val id: String,
+        val isCompressed: Boolean
+    )
+
 
     // ── Authorization (not part of core interface) ─────────────────────────────
 
@@ -146,7 +151,7 @@ class RoomGuardDrive(
                 FileOutputStream(tempFile, true).use { it.fd.sync() }
 
                 val dbName = databaseProvider.getDatabaseName()
-                val existingId = findBackupFile(drive)
+                val existingBackup = findBackupFile(drive)
                 
                 val useGzip = config.useCompression
                 val uploadFile = if (useGzip) {
@@ -159,14 +164,14 @@ class RoomGuardDrive(
 
                 val metadata = DriveFile().apply {
                     name = if (useGzip) "$dbName$GZ_SUFFIX" else dbName
-                    if (existingId == null) parents = listOf("appDataFolder")
+                    if (existingBackup == null) parents = listOf("appDataFolder")
                 }
                 
                 val mimeType = if (useGzip) GZIP_MIME_TYPE else BACKUP_MIME_TYPE
                 val media = FileContent(mimeType, uploadFile)
 
-                val uploaded = if (existingId != null) {
-                    drive.files().update(existingId, metadata, media)
+                val uploaded = if (existingBackup != null) {
+                    drive.files().update(existingBackup.id, metadata, media)
                         .setFields("id, name, modifiedTime, size").execute()
                 } else {
                     drive.files().create(metadata, media)
@@ -215,11 +220,11 @@ class RoomGuardDrive(
                 val drive = buildDriveService(resolvedToken)
                     ?: return@withContext BackupResult.Error(BackupErrorCode.NOT_AUTHORIZED, "Not authorized")
 
-                val fileId = findBackupFile(drive)
+                val remoteBackup = findBackupFile(drive)
                     ?: return@withContext BackupResult.Error(BackupErrorCode.NO_BACKUP_FOUND, "No backup found on Drive")
 
                 if (tempFile.exists()) tempFile.delete()
-                drive.files().get(fileId).executeMediaAsInputStream().use { input ->
+                drive.files().get(remoteBackup.id).executeMediaAsInputStream().use { input ->
                     FileOutputStream(tempFile).use { output ->
                         input.copyTo(output)
                         output.flush()
@@ -227,8 +232,8 @@ class RoomGuardDrive(
                     }
                 }
 
-                // Auto-detect compression regardless of current config
-                if (ZipUtils.isGzipped(tempFile)) {
+                // Restore compressed backups transparently.
+                if (remoteBackup.isCompressed || ZipUtils.isGzipped(tempFile)) {
                     val decompressedFile = java.io.File(context.cacheDir, "${TEMP_RESTORE_FILE}_decomp")
                     try {
                         ZipUtils.decompressFile(tempFile, decompressedFile)
@@ -341,7 +346,7 @@ class RoomGuardDrive(
                     )
                 }
 
-                val file = drive.files().get(fileId)
+                val file = drive.files().get(fileId.id)
                     .setFields("id, name, modifiedTime, size").execute()
 
                 BackupResult.Success(
@@ -456,7 +461,7 @@ class RoomGuardDrive(
      * Finds the backup file in Drive appDataFolder by the DB name.
      * Returns the file ID (opaque string), or null if not found.
      */
-    private fun findBackupFile(drive: Drive): String? {
+    private fun findBackupFile(drive: Drive): RemoteBackupFile? {
         val dbName = databaseProvider.getDatabaseName()
         val result = drive.files().list()
             .setSpaces("appDataFolder")
@@ -469,7 +474,13 @@ class RoomGuardDrive(
         val validFiles = result.files.filter { (it.getSize() ?: 0L) > 0 }
         
         // Prioritize compressed version if both exist for some reason
-        return validFiles.find { it.name.endsWith(GZ_SUFFIX) }?.id ?: validFiles.firstOrNull()?.id
+        val compressed = validFiles.firstOrNull { it.name.endsWith(GZ_SUFFIX) }
+        if (compressed != null) {
+            return RemoteBackupFile(compressed.id, isCompressed = true)
+        }
+
+        val plain = validFiles.firstOrNull() ?: return null
+        return RemoteBackupFile(plain.id, isCompressed = false)
     }
 
     /**

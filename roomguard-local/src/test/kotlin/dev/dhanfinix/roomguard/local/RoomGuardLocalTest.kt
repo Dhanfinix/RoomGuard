@@ -3,7 +3,11 @@ package dev.dhanfinix.roomguard.local
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import com.google.android.gms.auth.api.identity.AuthorizationClient
+import com.google.android.gms.auth.api.identity.SignInClient
+import dev.dhanfinix.roomguard.RoomGuard
 import dev.dhanfinix.roomguard.core.*
+import dev.dhanfinix.roomguard.drive.DriveTokenStore
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -23,6 +27,10 @@ class RoomGuardLocalTest {
     private lateinit var context: Context
     private lateinit var contentResolver: ContentResolver
     private lateinit var mockSerializer: CsvSerializer
+    private lateinit var mockProvider: DatabaseProvider
+    private lateinit var mockTokenStore: DriveTokenStore
+    private lateinit var mockAuthClient: AuthorizationClient
+    private lateinit var mockSignInClient: SignInClient
     private lateinit var roomGuardLocal: RoomGuardLocal
     private lateinit var tempDir: File
 
@@ -31,6 +39,10 @@ class RoomGuardLocalTest {
         context = mockk(relaxed = true)
         contentResolver = mockk(relaxed = true)
         mockSerializer = mockk(relaxed = true)
+        mockProvider = mockk(relaxed = true)
+        mockTokenStore = mockk(relaxed = true)
+        mockAuthClient = mockk(relaxed = true)
+        mockSignInClient = mockk(relaxed = true)
         
         // Create a real temp directory for file operations
         tempDir = Files.createTempDirectory("roomguard_test").toFile()
@@ -41,12 +53,15 @@ class RoomGuardLocalTest {
         mockkStatic(Uri::class)
         every { Uri.parse(any()) } returns mockk(relaxed = true)
 
-        roomGuardLocal = RoomGuardLocal(
-            context = context,
-            serializer = mockSerializer,
-            filePrefix = "test_backup",
-            config = RoomGuardConfig(useCompression = false)
-        )
+        roomGuardLocal = RoomGuard.Builder(context)
+            .appName("test")
+            .databaseProvider(mockProvider)
+            .tokenStore(mockTokenStore)
+            .csvSerializer(mockSerializer)
+            .driveClients(mockAuthClient, mockSignInClient)
+            .config(RoomGuardConfig(useCompression = false))
+            .build()
+            .localManager
     }
 
     @After
@@ -56,13 +71,13 @@ class RoomGuardLocalTest {
     }
 
     @Test
-    fun `exportToCsv creates a valid file and returns path`() = runTest {
+    fun `exportLocalBackup csv creates a valid file and returns path`() = runTest {
         // Arrange
         val csvContent = "id,name\n1,test"
         coEvery { mockSerializer.toCsv() } returns csvContent
         
         // Action
-        val result = roomGuardLocal.exportToCsv()
+        val result = roomGuardLocal.exportLocalBackup(LocalBackupFormat.CSV)
         
         // Assert
         assertTrue(result is BackupResult.Success)
@@ -75,14 +90,12 @@ class RoomGuardLocalTest {
     }
 
     @Test
-    fun `exportToCsv with compression creates gzipped file`() = runTest {
+    fun `exportLocalBackup with compression creates gzipped file`() = runTest {
         // Arrange
-        val config = RoomGuardConfig(useCompression = true)
-        roomGuardLocal = RoomGuardLocal(context, mockSerializer, config = config)
         coEvery { mockSerializer.toCsv() } returns "some data"
         
         // Action
-        val result = roomGuardLocal.exportToCsv()
+        val result = roomGuardLocal.exportLocalBackup(LocalBackupFormat.COMPRESSED)
         
         // Assert
         assertTrue(result is BackupResult.Success)
@@ -92,7 +105,7 @@ class RoomGuardLocalTest {
     }
 
     @Test
-    fun `importFromCsv reads content and delegates to serializer`() = runTest {
+    fun `importFromLocal reads content and delegates to serializer`() = runTest {
         // Arrange
         val csvContent = "imported,data"
         val mockInputStream = ByteArrayInputStream(csvContent.toByteArray())
@@ -102,7 +115,7 @@ class RoomGuardLocalTest {
         coEvery { mockSerializer.fromCsv(csvContent, any()) } returns summary
         
         // Action
-        val result = roomGuardLocal.importFromCsv("content://test", RestoreStrategy.MERGE)
+        val result = roomGuardLocal.importFromLocal("content://test", RestoreStrategy.MERGE)
         
         // Assert
         assertTrue(result is BackupResult.Success)
@@ -111,7 +124,7 @@ class RoomGuardLocalTest {
     }
 
     @Test
-    fun `importFromCsv handles gzipped input`() = runTest {
+    fun `importFromLocal handles gzipped input`() = runTest {
         // Arrange
         val csvContent = "compressed,data"
         val tempFile = File(tempDir, "temp.gz")
@@ -127,10 +140,17 @@ class RoomGuardLocalTest {
         coEvery { mockSerializer.fromCsv(csvContent, any()) } returns mockk()
         
         // Ensure the config doesn't interfere, though import detects gzippedness automatically
-        roomGuardLocal = RoomGuardLocal(context, mockSerializer)
+        roomGuardLocal = RoomGuard.Builder(context)
+            .appName("test")
+            .databaseProvider(mockProvider)
+            .tokenStore(mockTokenStore)
+            .csvSerializer(mockSerializer)
+            .driveClients(mockAuthClient, mockSignInClient)
+            .build()
+            .localManager
         
         // Action
-        roomGuardLocal.importFromCsv("content://test.gz", RestoreStrategy.OVERWRITE)
+        roomGuardLocal.importFromLocal("content://test.gz", RestoreStrategy.OVERWRITE)
         
         // Assert
         coVerify { mockSerializer.fromCsv(csvContent, RestoreStrategy.OVERWRITE) }

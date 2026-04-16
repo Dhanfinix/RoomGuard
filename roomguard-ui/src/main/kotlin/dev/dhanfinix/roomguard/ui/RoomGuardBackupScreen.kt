@@ -3,7 +3,6 @@ package dev.dhanfinix.roomguard.ui
 import android.app.Activity
 import android.content.Intent
 import android.content.IntentSender
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,7 +20,9 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.gms.auth.api.identity.Identity
 import dev.dhanfinix.roomguard.core.LocalBackupManager
+import dev.dhanfinix.roomguard.core.LocalBackupFormat
 import dev.dhanfinix.roomguard.core.RestoreConfig
+import dev.dhanfinix.roomguard.core.SyncStatus
 import dev.dhanfinix.roomguard.drive.DriveTokenStore
 import dev.dhanfinix.roomguard.drive.RoomGuardDrive
 import dev.dhanfinix.roomguard.ui.component.BackupStatusHeader
@@ -34,10 +35,17 @@ import java.io.File
  *
  * Usage:
  * ```kotlin
+ * val roomGuard = RoomGuard.Builder(context)
+ *     .appName("AppName")
+ *     .databaseProvider(myDatabaseProvider)
+ *     .tokenStore(myTokenStore)
+ *     .csvSerializer(myCsvSerializer)
+ *     .build()
+ *
  * RoomGuardBackupScreen(
- *     driveManager = myDriveManager,
- *     localManager = myLocalManager,
- *     tokenStore = myTokenStore,
+ *     driveManager = roomGuard.driveManager,
+ *     localManager = roomGuard.localManager,
+ *     tokenStore = roomGuard.tokenStore,
  *     restoreConfig = RestoreConfig(tables = listOf("your_table"), mode = RestoreMode.ATTACH)
  * )
  * ```
@@ -72,6 +80,7 @@ internal fun RoomGuardBackupScreenContent(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val isCheckingConnection = uiState.syncStatus == SyncStatus.Checking
     var pendingSaveContent by remember { mutableStateOf<Pair<String, String>?>(null) }
     var dialogEvent by remember { mutableStateOf<BackupUiEvent?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -106,9 +115,9 @@ internal fun RoomGuardBackupScreenContent(
         }
     }
 
-    // Save CSV to device launcher
+    // Save backup file to device launcher
     val saveLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/csv")
+        ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
         uri?.let { dest ->
             pendingSaveContent?.let { (_, path) ->
@@ -120,11 +129,11 @@ internal fun RoomGuardBackupScreenContent(
         }
     }
 
-    // Import CSV from device launcher
+    // Import backup file from device launcher
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let { viewModel.onAction(BackupScreenAction.ImportCsv(it.toString())) }
+        uri?.let { viewModel.onAction(BackupScreenAction.ImportLocal(it.toString())) }
     }
 
     LaunchedEffect(Unit) {
@@ -146,7 +155,7 @@ internal fun RoomGuardBackupScreenContent(
                         file
                     )
                     val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/csv"
+                        type = event.mimeType
                         putExtra(Intent.EXTRA_STREAM, uri)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
@@ -333,6 +342,7 @@ internal fun RoomGuardBackupScreenContent(
 
             CloudActionsGroup(
                 isDriveAuthorized = uiState.isDriveAuthorized,
+                isCheckingConnection = isCheckingConnection,
                 isProcessing = uiState.isProcessing,
                 onConnect = { viewModel.onAction(BackupScreenAction.ConnectDrive) },
                 onBackup = { viewModel.onAction(BackupScreenAction.Backup) },
@@ -342,10 +352,12 @@ internal fun RoomGuardBackupScreenContent(
 
             LocalDataGroup(
                 isProcessing = uiState.isProcessing,
-                onExportCsv = { viewModel.onAction(BackupScreenAction.ExportCsv) },
-                onSaveToDevice = { viewModel.onAction(BackupScreenAction.SaveCsvToDevice) },
-                onImportCsv = {
-                    importLauncher.launch(arrayOf("text/csv", "text/comma-separated-values"))
+                onShareCsv = { viewModel.onAction(BackupScreenAction.ExportLocal(LocalBackupFormat.CSV)) },
+                onSaveCsv = { viewModel.onAction(BackupScreenAction.SaveLocalToDevice(LocalBackupFormat.CSV)) },
+                onShareCompressed = { viewModel.onAction(BackupScreenAction.ExportLocal(LocalBackupFormat.COMPRESSED)) },
+                onSaveCompressed = { viewModel.onAction(BackupScreenAction.SaveLocalToDevice(LocalBackupFormat.COMPRESSED)) },
+                onImportLocal = {
+                    importLauncher.launch(arrayOf("text/*", "application/gzip", "application/x-gzip"))
                 }
             )
         }

@@ -6,10 +6,10 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import dev.dhanfinix.roomguard.RoomGuard
 import dev.dhanfinix.roomguard.core.*
 import dev.dhanfinix.roomguard.drive.DriveTokenStore
 import dev.dhanfinix.roomguard.drive.RoomGuardDrive
-import dev.dhanfinix.roomguard.drive.token.DataStoreDriveTokenStore
 import javax.inject.Named
 import javax.inject.Singleton
 
@@ -17,34 +17,42 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object RoomGuardDriveModule {
 
-    @Provides
-    @Singleton
-    fun provideDriveTokenStore(
-        @ApplicationContext context: Context
-    ): DriveTokenStore = DataStoreDriveTokenStore(context)
-
     /**
-     * Provide [RoomGuardDrive] with host-supplied [DatabaseProvider] and app name.
-     * The host must bind [DatabaseProvider] in their own Hilt module.
-     *
-     * @Named("appName") — host must provide a String with this qualifier
+     * Build the shared RoomGuard facade once, then expose its pieces through Hilt.
+     * The host only needs to provide [appName] once; the Local file prefix is derived
+     * automatically unless the builder overrides it.
      */
     @Provides
     @Singleton
-    fun provideDriveBackupManager(
+    fun provideRoomGuard(
         @ApplicationContext context: Context,
         @Named("appName") appName: String,
         databaseProvider: DatabaseProvider,
+        serializer: CsvSerializer,
         tokenStore: DriveTokenStore,
         config: RoomGuardConfig
-    ): RoomGuardDrive = RoomGuardDrive(context, appName, databaseProvider, tokenStore, config)
+    ): RoomGuard = RoomGuard.Builder(context)
+        .appName(appName)
+        .databaseProvider(databaseProvider)
+        .tokenStore(tokenStore)
+        .csvSerializer(serializer)
+        .config(config)
+        .build()
 
     /**
-     * Also bind [DriveBackupManager] interface to the same [RoomGuardDrive] instance.
+     * Also bind [RoomGuardDrive] and [DriveBackupManager] to the same instance.
      */
+    @Provides
+    @Singleton
+    fun provideDriveManager(roomGuard: RoomGuard): RoomGuardDrive = roomGuard.driveManager
+
     @Provides
     @Singleton
     fun bindDriveBackupManager(
         drive: RoomGuardDrive
     ): DriveBackupManager = drive
+
+    @Provides
+    @Singleton
+    fun provideDriveTokenStore(roomGuard: RoomGuard): DriveTokenStore = roomGuard.tokenStore
 }

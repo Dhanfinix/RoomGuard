@@ -20,11 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.dhanfinix.roomguard.RoomGuard
 import dev.dhanfinix.roomguard.core.RestoreConfig
 import dev.dhanfinix.roomguard.core.RestoreMode
-import dev.dhanfinix.roomguard.drive.RoomGuardDrive
 import dev.dhanfinix.roomguard.drive.token.DataStoreDriveTokenStore
-import dev.dhanfinix.roomguard.local.RoomGuardLocal
 import dev.dhanfinix.roomguard.sample.data.NoteCsvSerializer
 import dev.dhanfinix.roomguard.sample.data.NoteDatabase
 import dev.dhanfinix.roomguard.sample.data.NoteDatabase.Companion.DB_NAME
@@ -43,13 +42,12 @@ class MainActivity : ComponentActivity() {
         // RoomGuard wiring
         val tokenStore = DataStoreDriveTokenStore(this)
         val dbProvider = NoteDatabaseProvider(this, db)
-        val driveManager = RoomGuardDrive(
-            context = this,
-            appName = getString(dev.dhanfinix.roomguard.sample.R.string.app_name),
-            databaseProvider = dbProvider,
-            tokenStore = tokenStore
-        )
-        val localManager = RoomGuardLocal(this, NoteCsvSerializer(dao), filePrefix = "${DB_NAME}_backup")
+        val roomGuard = RoomGuard.Builder(this)
+            .appName(getString(dev.dhanfinix.roomguard.sample.R.string.app_name))
+            .databaseProvider(dbProvider)
+            .tokenStore(tokenStore)
+            .csvSerializer(NoteCsvSerializer(dao))
+            .build()
         val restoreConfig = RestoreConfig(tables = listOf(DB_NAME), mode = RestoreMode.ATTACH)
 
         setContent {
@@ -58,9 +56,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 SampleApp(
                     dao = dao,
-                    driveManager = driveManager,
-                    localManager = localManager,
-                    tokenStore = tokenStore,
+                    roomGuard = roomGuard,
                     restoreConfig = restoreConfig
                 )
             }
@@ -72,9 +68,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun SampleApp(
     dao: dev.dhanfinix.roomguard.sample.data.NoteDao,
-    driveManager: RoomGuardDrive,
-    localManager: RoomGuardLocal,
-    tokenStore: DataStoreDriveTokenStore,
+    roomGuard: RoomGuard,
     restoreConfig: RestoreConfig
 ) {
     val mainViewModel: MainViewModel = viewModel(factory = MainViewModel.Factory(dao))
@@ -106,9 +100,9 @@ private fun SampleApp(
             }
         ) { padding ->
             RoomGuardBackupScreen(
-                driveManager = driveManager,
-                localManager = localManager,
-                tokenStore = tokenStore,
+                driveManager = roomGuard.driveManager,
+                localManager = roomGuard.localManager,
+                tokenStore = roomGuard.tokenStore,
                 restoreConfig = restoreConfig,
                 modifier = Modifier.padding(padding)
             )

@@ -26,9 +26,7 @@ android {
 }
 
 dependencies {
-    api(project(":roomguard-core"))
-    api(project(":roomguard-drive"))
-    api(project(":roomguard-local"))
+    api(project(":roomguard"))
     implementation(libs.hilt.android)
     kapt(libs.hilt.compiler)
 }

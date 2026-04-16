@@ -30,8 +30,8 @@ android {
 
 dependencies {
     api(project(":roomguard-core"))
-    implementation(project(":roomguard-drive"))
-    implementation(project(":roomguard-local"))
+    api(project(":roomguard-drive"))
+    api(project(":roomguard-local"))
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.material3)

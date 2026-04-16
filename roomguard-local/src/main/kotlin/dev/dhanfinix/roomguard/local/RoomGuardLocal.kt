@@ -7,10 +7,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.io.FileWriter
 
 /**
- * Local file (CSV) implementation of [LocalBackupManager].
+ * Local file implementation of [LocalBackupManager].
  *
  * @param context    Application context (used for cache dir and content resolver)
  * @param serializer Host-provided CSV serializer — owns the data format entirely
@@ -27,21 +26,15 @@ class RoomGuardLocal(
     // ── Export ─────────────────────────────────────────────────────────────────
 
     /**
-     * Generates CSV via [CsvSerializer.toCsv] and writes it to the app's cache directory.
-     *
-     * File name format: "{filePrefix}_{epochMillis}.csv"
-     *
-     * The returned file path can be used to:
-     * - Share via [Intent.ACTION_SEND] (use FileProvider URI)
-     * - Write to a user-picked URI via SAF (CREATE_DOCUMENT)
+     * Generates a local backup file in the requested format and writes it to the app's cache directory.
      */
-    override suspend fun exportToCsv(): BackupResult<String> = withContext(Dispatchers.IO) {
+    override suspend fun exportLocalBackup(format: LocalBackupFormat): BackupResult<String> = withContext(Dispatchers.IO) {
         try {
             val csv = serializer.toCsv()
             val baseName = "${filePrefix}_${System.currentTimeMillis()}"
-            val useGzip = config.useCompression
+            val useGzip = format == LocalBackupFormat.COMPRESSED
             
-            val fileName = if (useGzip) "$baseName.csv.gz" else "$baseName.csv"
+            val fileName = "$baseName${format.fileExtension}"
             val file = File(context.cacheDir, fileName)
             
             if (useGzip) {
@@ -67,7 +60,7 @@ class RoomGuardLocal(
      * The host's [CsvSerializer.fromCsv] handles all parsing, deduplication,
      * and insertion into the DB.
      */
-    override suspend fun importFromCsv(uri: String, strategy: RestoreStrategy): BackupResult<ImportSummary> =
+    override suspend fun importFromLocal(uri: String, strategy: RestoreStrategy): BackupResult<ImportSummary> =
         withContext(Dispatchers.IO) {
             val tempFile = File(context.cacheDir, "roomguard_import_temp")
             try {
@@ -100,4 +93,17 @@ class RoomGuardLocal(
                 if (tempFile.exists()) tempFile.delete()
             }
         }
+
+    @Deprecated(
+        message = "Use exportLocalBackup(format) instead.",
+        replaceWith = ReplaceWith("exportLocalBackup(config.localBackupFormat)")
+    )
+    override suspend fun exportToCsv(): BackupResult<String> = exportLocalBackup(config.localBackupFormat)
+
+    @Deprecated(
+        message = "Use importFromLocal(uri, strategy) instead.",
+        replaceWith = ReplaceWith("importFromLocal(uri, strategy)")
+    )
+    override suspend fun importFromCsv(uri: String, strategy: RestoreStrategy): BackupResult<ImportSummary> =
+        importFromLocal(uri, strategy)
 }

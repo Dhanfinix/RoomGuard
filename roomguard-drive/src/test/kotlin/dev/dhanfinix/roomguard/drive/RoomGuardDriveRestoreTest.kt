@@ -3,6 +3,7 @@ package dev.dhanfinix.roomguard.drive
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
+import dev.dhanfinix.roomguard.RoomGuard
 import dev.dhanfinix.roomguard.core.*
 import io.mockk.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -23,6 +24,7 @@ class RoomGuardDriveRestoreTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private lateinit var mockProvider: DatabaseProvider
     private lateinit var mockTokenStore: DriveTokenStore
+    private lateinit var mockSerializer: CsvSerializer
     private lateinit var mockAuthClient: com.google.android.gms.auth.api.identity.AuthorizationClient
     private lateinit var mockSignInClient: com.google.android.gms.auth.api.identity.SignInClient
     private lateinit var roomGuardDrive: RoomGuardDrive
@@ -32,19 +34,20 @@ class RoomGuardDriveRestoreTest {
     fun setup() {
         mockProvider = mockk(relaxed = true)
         mockTokenStore = mockk(relaxed = true)
+        mockSerializer = mockk(relaxed = true)
         mockAuthClient = mockk(relaxed = true)
         mockSignInClient = mockk(relaxed = true)
         
         tempDir = Files.createTempDirectory("roomguard_restore_test").toFile()
         
-        roomGuardDrive = RoomGuardDrive(
-            context = context,
-            appName = "TestApp",
-            databaseProvider = mockProvider,
-            tokenStore = mockTokenStore,
-            authClient = mockAuthClient,
-            signInClient = mockSignInClient
-        )
+        roomGuardDrive = RoomGuard.Builder(context)
+            .appName("TestApp")
+            .databaseProvider(mockProvider)
+            .tokenStore(mockTokenStore)
+            .csvSerializer(mockSerializer)
+            .driveClients(mockAuthClient, mockSignInClient)
+            .build()
+            .driveManager
     }
 
     @After

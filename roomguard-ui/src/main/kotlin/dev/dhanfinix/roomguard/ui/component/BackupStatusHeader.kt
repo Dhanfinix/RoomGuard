@@ -87,9 +87,18 @@ fun BackupStatusHeader(
                             ),
                         contentAlignment = Alignment.Center
                     ) {
+                        val checking = !isDriveAuthorized && syncStatus == SyncStatus.Checking
                         Icon(
-                            imageVector = if (isDriveAuthorized) Icons.Outlined.Cloud else Icons.Outlined.CloudOff,
-                            contentDescription = if (isDriveAuthorized) "Connected" else "Not Connected",
+                            imageVector = when {
+                                isDriveAuthorized -> Icons.Outlined.Cloud
+                                checking -> Icons.Outlined.Sync
+                                else -> Icons.Outlined.CloudOff
+                            },
+                            contentDescription = when {
+                                isDriveAuthorized -> "Connected"
+                                checking -> "Checking"
+                                else -> "Not Connected"
+                            },
                             tint = contentColor,
                             modifier = Modifier.size(24.dp)
                         )
@@ -103,7 +112,12 @@ fun BackupStatusHeader(
                             color = contentColor
                         )
                         Text(
-                            text = userEmail ?: (if (isDriveAuthorized) "Connected" else "Not connected"),
+                            text = when {
+                                userEmail != null -> userEmail
+                                isDriveAuthorized -> "Connected"
+                                syncStatus == SyncStatus.Checking -> "Checking connection..."
+                                else -> "Not connected"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = contentColor.copy(alpha = 0.7f),
                             maxLines = 1,

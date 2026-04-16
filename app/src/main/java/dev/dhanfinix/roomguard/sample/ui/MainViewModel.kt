@@ -30,6 +30,7 @@ class MainViewModel(private val dao: NoteDao) : ViewModel() {
     fun deleteNote(note: NoteEntity) {
         viewModelScope.launch {
             dao.delete(note)
+            refresh()
         }
     }
 

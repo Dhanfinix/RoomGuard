@@ -6,7 +6,9 @@ import com.google.android.gms.auth.api.identity.SignInClient
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.client.http.HttpHeaders
 import com.google.api.client.http.HttpResponseException
+import dev.dhanfinix.roomguard.RoomGuard
 import dev.dhanfinix.roomguard.core.DatabaseProvider
+import dev.dhanfinix.roomguard.core.CsvSerializer
 import dev.dhanfinix.roomguard.drive.token.DataStoreDriveTokenStore
 import io.mockk.every
 import io.mockk.mockk
@@ -23,6 +25,7 @@ class RoomGuardDriveTest {
     private lateinit var mockContext: Context
     private lateinit var mockProvider: DatabaseProvider
     private lateinit var mockTokenStore: DriveTokenStore
+    private lateinit var mockSerializer: CsvSerializer
     private lateinit var mockAuthClient: AuthorizationClient
     private lateinit var mockSignInClient: SignInClient
 
@@ -31,17 +34,18 @@ class RoomGuardDriveTest {
         mockContext = mockk(relaxed = true)
         mockProvider = mockk(relaxed = true)
         mockTokenStore = mockk(relaxed = true)
+        mockSerializer = mockk(relaxed = true)
         mockAuthClient = mockk(relaxed = true)
         mockSignInClient = mockk(relaxed = true)
 
-        drive = RoomGuardDrive(
-            context = mockContext,
-            appName = "TestApp",
-            databaseProvider = mockProvider,
-            tokenStore = mockTokenStore,
-            authClient = mockAuthClient,
-            signInClient = mockSignInClient
-        )
+        drive = RoomGuard.Builder(mockContext)
+            .appName("TestApp")
+            .databaseProvider(mockProvider)
+            .tokenStore(mockTokenStore)
+            .csvSerializer(mockSerializer)
+            .driveClients(mockAuthClient, mockSignInClient)
+            .build()
+            .driveManager
     }
 
     @Test
