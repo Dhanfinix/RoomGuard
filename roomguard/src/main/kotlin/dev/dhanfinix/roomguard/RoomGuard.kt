@@ -15,11 +15,15 @@ import dev.dhanfinix.roomguard.local.RoomGuardLocal
  *
  * Build once, then reuse the created managers throughout the host app.
  */
-class RoomGuard internal constructor(
-    val driveManager: RoomGuardDrive,
-    val localManager: RoomGuardLocal,
-    val tokenStore: DriveTokenStore
+class RoomGuard(
+    private val _driveManager: RoomGuardDrive?,
+    private val _localManager: RoomGuardLocal?,
+    private val _tokenStore: DriveTokenStore?
 ) {
+    fun driveManager() = _driveManager
+    fun localManager() = _localManager
+    fun tokenStore() = _tokenStore
+
     class Builder(private val context: Context) {
         private var appName: String? = null
         private var databaseProvider: DatabaseProvider? = null
@@ -65,46 +69,51 @@ class RoomGuard internal constructor(
         fun build(): RoomGuard {
             val resolvedAppName = requireValue(appName, "appName")
             val resolvedDatabaseProvider = requireValue(databaseProvider, "databaseProvider")
-            val resolvedTokenStore = requireValue(tokenStore, "tokenStore")
-            val resolvedCsvSerializer = requireValue(csvSerializer, "csvSerializer")
-            val resolvedLocalFilePrefix = localFilePrefix ?: "${resolvedAppName}_backup"
+            
+            val resolvedLocalFilePrefix = localFilePrefix ?: (resolvedAppName + "_backup")
 
             val hasCustomDriveClients = authClient != null || signInClient != null
             require(!hasCustomDriveClients || (authClient != null && signInClient != null)) {
                 "driveClients() must provide both authClient and signInClient"
             }
 
-            val driveManager = if (hasCustomDriveClients) {
-                RoomGuardDrive(
+            // Only build DriveManager if tokenStore is provided
+            val driveManager = tokenStore?.let { resolvedTokenStore ->
+                if (hasCustomDriveClients) {
+                    RoomGuardDrive(
+                        context = context,
+                        appName = resolvedAppName,
+                        databaseProvider = resolvedDatabaseProvider,
+                        tokenStore = resolvedTokenStore,
+                        config = config,
+                        authClient = requireNotNull(authClient),
+                        signInClient = requireNotNull(signInClient)
+                    )
+                } else {
+                    RoomGuardDrive(
+                        context = context,
+                        appName = resolvedAppName,
+                        databaseProvider = resolvedDatabaseProvider,
+                        tokenStore = resolvedTokenStore,
+                        config = config
+                    )
+                }
+            }
+
+            // Only build LocalManager if csvSerializer is provided
+            val localManager = csvSerializer?.let { resolvedSerializer ->
+                RoomGuardLocal(
                     context = context,
-                    appName = resolvedAppName,
-                    databaseProvider = resolvedDatabaseProvider,
-                    tokenStore = resolvedTokenStore,
-                    config = config,
-                    authClient = requireNotNull(authClient),
-                    signInClient = requireNotNull(signInClient)
-                )
-            } else {
-                RoomGuardDrive(
-                    context = context,
-                    appName = resolvedAppName,
-                    databaseProvider = resolvedDatabaseProvider,
-                    tokenStore = resolvedTokenStore,
+                    serializer = resolvedSerializer,
+                    filePrefix = resolvedLocalFilePrefix,
                     config = config
                 )
             }
 
-            val localManager = RoomGuardLocal(
-                context = context,
-                serializer = resolvedCsvSerializer,
-                filePrefix = resolvedLocalFilePrefix,
-                config = config
-            )
-
             return RoomGuard(
-                driveManager = driveManager,
-                localManager = localManager,
-                tokenStore = resolvedTokenStore
+                _driveManager = driveManager,
+                _localManager = localManager,
+                _tokenStore = tokenStore
             )
         }
 
