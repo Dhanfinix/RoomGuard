@@ -59,11 +59,14 @@ class RoomGuardBackupViewModelTest {
         val state = viewModel.uiState.value
         assertFalse(state.isDriveAuthorized)
         assertFalse(state.isProcessing)
+        assertFalse(state.isCloudProcessing)
+        assertFalse(state.isLocalProcessing)
         assertEquals(SyncStatus.Checking, state.syncStatus)
+        assertEquals(LocalBackupFormat.COMPRESSED, state.localBackupFormat)
     }
 
     @Test
-    fun `checkDriveAuthorized updates state on init`() = runTest {
+    fun `refreshStatus updates state on init`() = runTest {
         coEvery { mockDriveManager.isDriveAuthorized(any()) } returns true
         
         // Re-create ViewModel to trigger init
@@ -74,6 +77,16 @@ class RoomGuardBackupViewModelTest {
         
         assertTrue(viewModel.uiState.value.isDriveAuthorized)
         coVerify { mockDriveManager.getBackupInfo(any()) }
+    }
+
+    @Test
+    fun `refresh action rechecks drive status`() = runTest {
+        coEvery { mockDriveManager.isDriveAuthorized(any()) } returns true
+        viewModel.onAction(BackupScreenAction.Refresh)
+        advanceUntilIdle()
+
+        coVerify(atLeast = 1) { mockDriveManager.getBackupInfo(any()) }
+        assertTrue(viewModel.uiState.value.isDriveAuthorized)
     }
 
     @Test
@@ -127,7 +140,14 @@ class RoomGuardBackupViewModelTest {
     }
 
     @Test
+    fun `local format switch updates export state to csv`() = runTest {
+        viewModel.onAction(BackupScreenAction.SetLocalFormat(LocalBackupFormat.CSV))
+        assertEquals(LocalBackupFormat.CSV, viewModel.uiState.value.localBackupFormat)
+    }
+
+    @Test
     fun `exportLocal csv emits share event with csv mime type`() = runTest {
+        viewModel.onAction(BackupScreenAction.SetLocalFormat(LocalBackupFormat.CSV))
         coEvery { mockLocalManager.exportLocalBackup(LocalBackupFormat.CSV) } returns BackupResult.Success(
             "/tmp/test.csv"
         )
@@ -137,13 +157,14 @@ class RoomGuardBackupViewModelTest {
             viewModel.events.collect { events.add(it) }
         }
 
-        viewModel.onAction(BackupScreenAction.ExportLocal(LocalBackupFormat.CSV))
+        viewModel.onAction(BackupScreenAction.ExportLocal)
         advanceUntilIdle()
 
         coVerify { mockLocalManager.exportLocalBackup(LocalBackupFormat.CSV) }
         val event = events.filterIsInstance<BackupUiEvent.ShareFile>().first()
         assertEquals("/tmp/test.csv", event.filePath)
         assertEquals("text/csv", event.mimeType)
+        assertFalse(viewModel.uiState.value.isCloudProcessing)
 
         job.cancel()
     }
@@ -159,7 +180,7 @@ class RoomGuardBackupViewModelTest {
             viewModel.events.collect { events.add(it) }
         }
 
-        viewModel.onAction(BackupScreenAction.SaveLocalToDevice(LocalBackupFormat.COMPRESSED))
+        viewModel.onAction(BackupScreenAction.SaveLocalToDevice)
         advanceUntilIdle()
 
         coVerify { mockLocalManager.exportLocalBackup(LocalBackupFormat.COMPRESSED) }
@@ -167,6 +188,7 @@ class RoomGuardBackupViewModelTest {
         assertEquals("test.csv.gz", event.fileName)
         assertEquals("/tmp/test.csv.gz", event.filePath)
         assertEquals("application/gzip", event.mimeType)
+        assertFalse(viewModel.uiState.value.isCloudProcessing)
 
         job.cancel()
     }

@@ -1,7 +1,5 @@
 package dev.dhanfinix.roomguard.ui
 
-import android.content.Context
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -36,7 +34,7 @@ class RoomGuardBackupViewModel(
     private var remoteModifiedTime: Long? = null
 
     init {
-        checkDriveAuthorized()
+        refreshStatus()
     }
 
     // ── Actions ────────────────────────────────────────────────────────────────
@@ -46,33 +44,48 @@ class RoomGuardBackupViewModel(
             is BackupScreenAction.ConnectDrive     -> requestDriveAuth()
             is BackupScreenAction.RevokeAccess     -> confirmRevokeAccess()
             is BackupScreenAction.Backup           -> onBackupRequested()
+            is BackupScreenAction.Refresh          -> refreshStatus()
             is BackupScreenAction.Restore          -> onRestoreRequested(action.strategy)
             is BackupScreenAction.AuthResult       -> handleAuthResult(action.token, action.error)
             is BackupScreenAction.AuthFailed       -> handleAuthResult(null, action.error)
-            is BackupScreenAction.ExportLocal -> exportLocal(action.format)
-            is BackupScreenAction.SaveLocalToDevice -> saveLocalToDevice(action.format)
+            is BackupScreenAction.SetLocalFormat   -> setLocalFormat(action.format)
+            is BackupScreenAction.ExportLocal      -> exportLocal()
+            is BackupScreenAction.SaveLocalToDevice -> saveLocalToDevice()
             is BackupScreenAction.ImportLocal -> onImportRequested(action.uri, action.strategy)
         }
     }
 
     // ── Drive Auth ─────────────────────────────────────────────────────────────
 
-    private fun checkDriveAuthorized() {
+    private fun refreshStatus() {
+        setCloudProcessing(true, "Refreshing status...")
         viewModelScope.launch {
             try {
                 val authorized = driveManager.isDriveAuthorized { token ->
                     tokenStore.saveToken(token)
                 }
                 _uiState.update { it.copy(isDriveAuthorized = authorized) }
-                if (authorized) fetchBackupInfo()
+                if (authorized) {
+                    fetchBackupInfo()
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            syncStatus = SyncStatus.Checking,
+                            lastBackupDate = null,
+                            userEmail = null
+                        )
+                    }
+                }
             } catch (_: Exception) {
                 _uiState.update { it.copy(isDriveAuthorized = false) }
+                handleAuthFailureState("Unable to check Drive status")
             }
+            setCloudProcessing(false)
         }
     }
 
     private fun requestDriveAuth() {
-        setProcessing(true, "Authorizing Drive...")
+        setCloudProcessing(true, "Authorizing Drive...")
         viewModelScope.launch {
             try {
                 tokenStore.setAuthorized(true)
@@ -91,7 +104,7 @@ class RoomGuardBackupViewModel(
                 val errorMsg = e.message ?: e.toString()
                 showError("Authorization start failed: $errorMsg")
             }
-            setProcessing(false)
+            setCloudProcessing(false)
         }
     }
 
@@ -123,7 +136,7 @@ class RoomGuardBackupViewModel(
     }
 
     private fun backup() {
-        setProcessing(true, "Backing up data...")
+        setCloudProcessing(true, "Backing up data...")
         viewModelScope.launch {
             val token = tokenStore.getToken()
             when (val result = driveManager.backup(token)) {
@@ -139,7 +152,7 @@ class RoomGuardBackupViewModel(
                     }
                 }
             }
-            setProcessing(false)
+            setCloudProcessing(false)
         }
     }
 
@@ -178,7 +191,7 @@ class RoomGuardBackupViewModel(
     }
 
     private fun restore(strategy: RestoreStrategy) {
-        setProcessing(true, "Restoring data...")
+        setCloudProcessing(true, "Restoring data...")
         viewModelScope.launch {
             val token = tokenStore.getToken()
             val config = defaultRestoreConfig.copy(strategy = strategy)
@@ -192,25 +205,31 @@ class RoomGuardBackupViewModel(
                     }
                 }
             }
-            setProcessing(false)
+            setCloudProcessing(false)
         }
     }
 
     // ── CSV Export / Import ────────────────────────────────────────────────────
 
-    private fun exportLocal(format: LocalBackupFormat) {
-        setProcessing(true, "Preparing ${format.title}...")
+    private fun setLocalFormat(format: LocalBackupFormat) {
+        _uiState.update { it.copy(localBackupFormat = format) }
+    }
+
+    private fun exportLocal() {
+        val format = _uiState.value.localBackupFormat
+        setLocalProcessing(true, "Preparing ${format.title}...")
         viewModelScope.launch {
             when (val result = localManager.exportLocalBackup(format)) {
                 is BackupResult.Success -> _events.emit(BackupUiEvent.ShareFile(result.data, format.mimeType))
                 is BackupResult.Error   -> showError(result.message)
             }
-            setProcessing(false)
+            setLocalProcessing(false)
         }
     }
 
-    private fun saveLocalToDevice(format: LocalBackupFormat) {
-        setProcessing(true, "Preparing ${format.title}...")
+    private fun saveLocalToDevice() {
+        val format = _uiState.value.localBackupFormat
+        setLocalProcessing(true, "Preparing ${format.title}...")
         viewModelScope.launch {
             when (val result = localManager.exportLocalBackup(format)) {
                 is BackupResult.Success -> {
@@ -225,7 +244,7 @@ class RoomGuardBackupViewModel(
                 }
                 is BackupResult.Error -> showError(result.message)
             }
-            setProcessing(false)
+            setLocalProcessing(false)
         }
     }
 
@@ -243,20 +262,20 @@ class RoomGuardBackupViewModel(
     }
 
     private fun importCsv(uri: String, strategy: RestoreStrategy) {
-        setProcessing(true, "Importing data...")
+        setLocalProcessing(true, "Importing data...")
         viewModelScope.launch {
             when (val result = localManager.importFromLocal(uri, strategy)) {
                 is BackupResult.Success -> showSuccess(result.data.message)
                 is BackupResult.Error   -> showError(result.message)
             }
-            setProcessing(false)
+            setLocalProcessing(false)
         }
     }
 
     // ── Info ───────────────────────────────────────────────────────────────────
 
     private fun fetchBackupInfo() {
-        setProcessing(true, "Checking status...")
+        setCloudProcessing(true, "Checking status...")
         viewModelScope.launch {
             val token = tokenStore.getToken()
             when (val result = driveManager.getBackupInfo(token)) {
@@ -278,12 +297,12 @@ class RoomGuardBackupViewModel(
                     }
                 }
             }
-            setProcessing(false)
+            setCloudProcessing(false)
         }
     }
 
     private fun fetchAndHandleFirstConnect(token: String) {
-        setProcessing(true, "Checking for existing backup...")
+        setCloudProcessing(true, "Checking for existing backup...")
         viewModelScope.launch {
             when (val result = driveManager.getBackupInfo(token)) {
                 is BackupResult.Success -> {
@@ -309,7 +328,7 @@ class RoomGuardBackupViewModel(
                     }
                 }
             }
-            setProcessing(false)
+            setCloudProcessing(false)
         }
     }
 
@@ -336,8 +355,24 @@ class RoomGuardBackupViewModel(
         showError(message)
     }
 
-    private fun setProcessing(isProcessing: Boolean, message: String? = null) {
-        _uiState.update { it.copy(isProcessing = isProcessing, loadingMessage = message) }
+    private fun setCloudProcessing(isProcessing: Boolean, message: String? = null) {
+        _uiState.update {
+            it.copy(
+                isCloudProcessing = isProcessing,
+                isProcessing = isProcessing || it.isLocalProcessing,
+                loadingMessage = message
+            )
+        }
+    }
+
+    private fun setLocalProcessing(isProcessing: Boolean, message: String? = null) {
+        _uiState.update {
+            it.copy(
+                isLocalProcessing = isProcessing,
+                isProcessing = isProcessing || it.isCloudProcessing,
+                loadingMessage = message
+            )
+        }
     }
 
     private fun showSuccess(msg: String) {
@@ -366,8 +401,11 @@ class RoomGuardBackupViewModel(
 
 data class BackupUiState(
     val isDriveAuthorized: Boolean = false,
+    val isCloudProcessing: Boolean = false,
+    val isLocalProcessing: Boolean = false,
     val isProcessing: Boolean = false,
     val syncStatus: SyncStatus = SyncStatus.Checking,
+    val localBackupFormat: LocalBackupFormat = LocalBackupFormat.COMPRESSED,
     val loadingMessage: String? = null,
     val lastBackupDate: Long? = null,
     val userEmail: String? = null
@@ -377,11 +415,13 @@ sealed interface BackupScreenAction {
     data object ConnectDrive : BackupScreenAction
     data object RevokeAccess : BackupScreenAction
     data object Backup : BackupScreenAction
+    data object Refresh : BackupScreenAction
     data class Restore(val strategy: RestoreStrategy? = null) : BackupScreenAction
     data class AuthResult(val token: String?, val error: String? = null) : BackupScreenAction
     data class AuthFailed(val error: String? = null) : BackupScreenAction
-    data class ExportLocal(val format: LocalBackupFormat) : BackupScreenAction
-    data class SaveLocalToDevice(val format: LocalBackupFormat) : BackupScreenAction
+    data class SetLocalFormat(val format: LocalBackupFormat) : BackupScreenAction
+    data object ExportLocal : BackupScreenAction
+    data object SaveLocalToDevice : BackupScreenAction
     data class ImportLocal(val uri: String, val strategy: RestoreStrategy? = null) : BackupScreenAction
 }
 

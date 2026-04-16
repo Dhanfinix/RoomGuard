@@ -2,10 +2,10 @@ package dev.dhanfinix.roomguard.ui.component
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.Publish
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -13,20 +13,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import dev.dhanfinix.roomguard.core.LocalBackupFormat
 
 /**
- * Local backup section with explicit format choices.
+ * Local backup section with a single format switch.
  */
 @Composable
 fun LocalDataGroup(
     isProcessing: Boolean,
-    onShareCsv: () -> Unit,
-    onSaveCsv: () -> Unit,
-    onShareCompressed: () -> Unit,
-    onSaveCompressed: () -> Unit,
+    selectedFormat: LocalBackupFormat,
+    onFormatChange: (LocalBackupFormat) -> Unit,
+    onShareLocal: () -> Unit,
+    onSaveLocal: () -> Unit,
     onImportLocal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isCompressed = selectedFormat == LocalBackupFormat.COMPRESSED
+
     ElevatedCard(
         modifier = modifier.fillMaxWidth(),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp)
@@ -45,186 +48,176 @@ fun LocalDataGroup(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Export a human-readable CSV or a smaller compressed backup. Imports accept both .csv and .csv.gz.",
+                    text = "Choose between a human-readable CSV or a compressed backup. Import accepts both .csv and .csv.gz files.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            BackupFormatCard(
-                icon = Icons.Outlined.Share,
-                title = "Human-readable CSV",
-                subtitle = "Easy to inspect, edit, and share. Saves as .csv.",
-                primaryActionLabel = "Share CSV",
-                secondaryActionLabel = "Save CSV",
-                onPrimaryAction = onShareCsv,
-                onSecondaryAction = onSaveCsv,
-                enabled = !isProcessing
-            )
-
-            BackupFormatCard(
-                icon = Icons.Outlined.FolderZip,
-                title = "Compressed backup",
-                subtitle = "Smaller file size for archiving and transport. Saves as .csv.gz.",
-                primaryActionLabel = "Share Compressed",
-                secondaryActionLabel = "Save Compressed",
-                onPrimaryAction = onShareCompressed,
-                onSecondaryAction = onSaveCompressed,
-                enabled = !isProcessing
-            )
-
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-
-            ImportCard(
-                enabled = !isProcessing,
-                onImportLocal = onImportLocal
-            )
-        }
-    }
-}
-
-@Composable
-private fun BackupFormatCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String,
-    primaryActionLabel: String,
-    secondaryActionLabel: String,
-    onPrimaryAction: () -> Unit,
-    onSecondaryAction: () -> Unit,
-    enabled: Boolean
-) {
-    OutlinedCard(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        border = CardDefaults.outlinedCardBorder(enabled)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            OutlinedCard(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = CardDefaults.outlinedCardBorder(!isProcessing)
             ) {
-                Box(
-                    modifier = Modifier.size(40.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = if (enabled) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                    )
-                }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (enabled) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                    )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                    )
-                }
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(
-                    onClick = onPrimaryAction,
-                    enabled = enabled,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(primaryActionLabel)
-                }
-
-                OutlinedButton(
-                    onClick = onSecondaryAction,
-                    enabled = enabled,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(secondaryActionLabel)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ImportCard(
-    enabled: Boolean,
-    onImportLocal: () -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            text = "Import Data",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
-
-        OutlinedCard(
-            onClick = onImportLocal,
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.outlinedCardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            border = CardDefaults.outlinedCardBorder(enabled)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .padding(8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Publish,
-                        contentDescription = null,
-                        tint = if (enabled) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                    )
-                }
-
                 Column(
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 8.dp)
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.size(40.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Tune,
+                                contentDescription = null,
+                                tint = if (!isProcessing) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            )
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isCompressed) "Compressed backup" else "Human-readable CSV",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (!isProcessing) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            )
+                            Text(
+                                text = if (isCompressed) {
+                                    "Smaller file size for archiving and transport."
+                                } else {
+                                    "Easy to inspect, edit, and share."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (!isProcessing) MaterialTheme.colorScheme.onSurfaceVariant
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Switch(
+                                checked = isCompressed,
+                                onCheckedChange = { checked ->
+                                    onFormatChange(
+                                        if (checked) LocalBackupFormat.COMPRESSED else LocalBackupFormat.CSV
+                                    )
+                                },
+                                enabled = !isProcessing
+                            )
+                            Text(
+                                text = if (isCompressed) "Compressed" else "CSV",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = onShareLocal,
+                            enabled = !isProcessing,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Share,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Share ${if (isCompressed) "Compressed" else "CSV"}",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = onSaveLocal,
+                            enabled = !isProcessing,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Storage,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Save to Device",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
                     Text(
-                        text = "Import from Device",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (enabled) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                    )
-                    Text(
-                        text = "Accepts both .csv and .csv.gz backups.",
+                        text = "Save as human-readable CSV when the switch is off. Turn it on for a compressed local backup.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+
+            OutlinedCard(
+                onClick = onImportLocal,
+                enabled = !isProcessing,
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = CardDefaults.outlinedCardBorder(!isProcessing)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Publish,
+                            contentDescription = null,
+                            tint = if (!isProcessing) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 8.dp)
+                    ) {
+                        Text(
+                            text = "Import from Device",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (!isProcessing) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        )
+                        Text(
+                            text = "Accepts both .csv and .csv.gz backups.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (!isProcessing) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        )
+                    }
                 }
             }
         }
@@ -238,10 +231,10 @@ private fun LocalDataGroupPreview() {
         Box(Modifier.padding(16.dp)) {
             LocalDataGroup(
                 isProcessing = false,
-                onShareCsv = {},
-                onSaveCsv = {},
-                onShareCompressed = {},
-                onSaveCompressed = {},
+                selectedFormat = LocalBackupFormat.COMPRESSED,
+                onFormatChange = {},
+                onShareLocal = {},
+                onSaveLocal = {},
                 onImportLocal = {}
             )
         }

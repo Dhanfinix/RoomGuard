@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,7 +22,6 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.gms.auth.api.identity.Identity
 import dev.dhanfinix.roomguard.core.LocalBackupManager
-import dev.dhanfinix.roomguard.core.LocalBackupFormat
 import dev.dhanfinix.roomguard.core.RestoreConfig
 import dev.dhanfinix.roomguard.core.SyncStatus
 import dev.dhanfinix.roomguard.drive.DriveTokenStore
@@ -73,6 +74,7 @@ fun RoomGuardBackupScreen(
     RoomGuardBackupScreenContent(viewModel = viewModel, modifier = modifier)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RoomGuardBackupScreenContent(
     viewModel: RoomGuardBackupViewModel,
@@ -81,6 +83,7 @@ internal fun RoomGuardBackupScreenContent(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val isCheckingConnection = uiState.syncStatus == SyncStatus.Checking
+    val pullRefreshState = rememberPullToRefreshState()
     var pendingSaveContent by remember { mutableStateOf<Pair<String, String>?>(null) }
     var dialogEvent by remember { mutableStateOf<BackupUiEvent?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -320,52 +323,55 @@ internal fun RoomGuardBackupScreenContent(
         }
     }
 
-    // Main content
-    Box(
+    PullToRefreshBox(
+        isRefreshing = uiState.isCloudProcessing,
+        onRefresh = { viewModel.onAction(BackupScreenAction.Refresh) },
+        state = pullRefreshState,
         modifier = modifier.fillMaxSize()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            BackupStatusHeader(
-                isDriveAuthorized = uiState.isDriveAuthorized,
-                syncStatus = uiState.syncStatus,
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                BackupStatusHeader(
+                    isDriveAuthorized = uiState.isDriveAuthorized,
+                    syncStatus = uiState.syncStatus,
                 lastBackupDate = uiState.lastBackupDate,
-                isProcessing = uiState.isProcessing,
+                isProcessing = uiState.isCloudProcessing,
                 statusMessage = uiState.loadingMessage,
                 userEmail = uiState.userEmail
             )
 
-            CloudActionsGroup(
-                isDriveAuthorized = uiState.isDriveAuthorized,
-                isCheckingConnection = isCheckingConnection,
-                isProcessing = uiState.isProcessing,
-                onConnect = { viewModel.onAction(BackupScreenAction.ConnectDrive) },
-                onBackup = { viewModel.onAction(BackupScreenAction.Backup) },
-                onRestore = { viewModel.onAction(BackupScreenAction.Restore()) },
-                onRevoke = { viewModel.onAction(BackupScreenAction.RevokeAccess) }
-            )
+                CloudActionsGroup(
+                    isDriveAuthorized = uiState.isDriveAuthorized,
+                    isCheckingConnection = isCheckingConnection,
+                    isProcessing = uiState.isCloudProcessing,
+                    onConnect = { viewModel.onAction(BackupScreenAction.ConnectDrive) },
+                    onBackup = { viewModel.onAction(BackupScreenAction.Backup) },
+                    onRestore = { viewModel.onAction(BackupScreenAction.Restore()) },
+                    onRevoke = { viewModel.onAction(BackupScreenAction.RevokeAccess) }
+                )
 
-            LocalDataGroup(
-                isProcessing = uiState.isProcessing,
-                onShareCsv = { viewModel.onAction(BackupScreenAction.ExportLocal(LocalBackupFormat.CSV)) },
-                onSaveCsv = { viewModel.onAction(BackupScreenAction.SaveLocalToDevice(LocalBackupFormat.CSV)) },
-                onShareCompressed = { viewModel.onAction(BackupScreenAction.ExportLocal(LocalBackupFormat.COMPRESSED)) },
-                onSaveCompressed = { viewModel.onAction(BackupScreenAction.SaveLocalToDevice(LocalBackupFormat.COMPRESSED)) },
-                onImportLocal = {
-                    importLauncher.launch(arrayOf("text/*", "application/gzip", "application/x-gzip"))
-                }
+                LocalDataGroup(
+                    isProcessing = uiState.isLocalProcessing,
+                    selectedFormat = uiState.localBackupFormat,
+                    onFormatChange = { viewModel.onAction(BackupScreenAction.SetLocalFormat(it)) },
+                    onShareLocal = { viewModel.onAction(BackupScreenAction.ExportLocal) },
+                    onSaveLocal = { viewModel.onAction(BackupScreenAction.SaveLocalToDevice) },
+                    onImportLocal = {
+                        importLauncher.launch(arrayOf("text/*", "application/gzip", "application/x-gzip"))
+                    }
+                )
+            }
+
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
-
-        // Snackbar overlay
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
     }
 }

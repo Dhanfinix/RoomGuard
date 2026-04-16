@@ -126,7 +126,6 @@ fun BackupStatusHeader(
                     }
                 }
 
-                // Sync status indicator
                 if (isDriveAuthorized) {
                     SyncStatusIndicator(
                         syncStatus = syncStatus,
