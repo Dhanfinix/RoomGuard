@@ -15,25 +15,41 @@ allprojects {
     version = "0.0.1-alpha.1"
 }
 
-subprojects {
-    // Load properties from local.properties if it exists (local development)
-    val localProperties = java.util.Properties().apply {
-        val file = rootProject.file("local.properties")
-        if (file.exists()) {
-            load(file.inputStream())
+// Load properties from local.properties if it exists (local development)
+val localProperties = java.util.Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        load(file.inputStream())
+    }
+}
+
+// Helper to find a property from local.properties, system env, or project properties
+fun findConfig(name: String): String? {
+    return localProperties.getProperty(name)
+        ?: System.getenv(name)
+        ?: System.getenv("ORG_GRADLE_PROJECT_$name")
+        ?: project.findProperty(name)?.toString()
+}
+
+// Root-level property injection (Global visibility)
+// We map both dotted and flat names to support different plugin search patterns.
+mapOf(
+    "MAVEN_CENTRAL_USERNAME" to listOf("mavenCentralUsername", "sonatypeUsername"),
+    "MAVEN_CENTRAL_PASSWORD" to listOf("mavenCentralPassword", "sonatypePassword"),
+    "GPG_SIGNING_KEY_ID" to listOf("signing.keyId", "signingKeyId"),
+    "GPG_SIGNING_KEY_PASSWORD" to listOf("signing.password", "signingPassword"),
+    "GPG_SIGNING_KEY" to listOf("signing.secretKey", "signingKey")
+).forEach { (envKey, gradleKeys) ->
+    findConfig(envKey)?.let { value ->
+        gradleKeys.forEach { key ->
+            // Inject into root project first (important for Sonatype global service)
+            project.extensions.extraProperties.set(key, value)
         }
     }
+}
 
-    // Helper to find a property from local.properties or System Environment
-    fun findConfig(name: String): String? {
-        return localProperties.getProperty(name) 
-            ?: System.getenv(name) 
-            ?: System.getenv("ORG_GRADLE_PROJECT_$name")
-            ?: project.findProperty(name)?.toString()
-    }
-
-    // Inject properties into the project extension so plugins can see them.
-    // We map both dotted and flat names to support different plugin search patterns.
+subprojects {
+    // Re-inject into subprojects so each module sees them in its own scope
     mapOf(
         "MAVEN_CENTRAL_USERNAME" to listOf("mavenCentralUsername", "sonatypeUsername"),
         "MAVEN_CENTRAL_PASSWORD" to listOf("mavenCentralPassword", "sonatypePassword"),
