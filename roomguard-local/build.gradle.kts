@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "dev.dhanfinix.roomguard.local"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 26
