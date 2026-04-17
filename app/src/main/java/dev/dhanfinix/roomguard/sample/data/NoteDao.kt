@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface NoteDao {
 
-    @Query("SELECT * FROM ${NoteDatabase.DB_NAME} ORDER BY createdAt DESC")
+    @Query("SELECT * FROM ${NoteDatabase.TABLE_NAME} ORDER BY createdAt DESC")
     fun getAllNotes(): Flow<List<NoteEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -16,7 +16,7 @@ interface NoteDao {
     @Delete
     suspend fun delete(note: NoteEntity)
 
-    @Query("DELETE FROM ${NoteDatabase.DB_NAME}")
+    @Query("DELETE FROM ${NoteDatabase.TABLE_NAME}")
     suspend fun clearAllNotes()
 
     @RawQuery

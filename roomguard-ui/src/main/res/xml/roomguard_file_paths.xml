@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Allow access to the app's cache directory where exported files are stored -->
+    <cache-path name="roomguard_cache" path="." />
+</paths>

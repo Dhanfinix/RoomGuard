@@ -18,9 +18,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.google.android.gms.auth.api.identity.Identity
+import dev.dhanfinix.roomguard.core.LocalBackupFormat
 import dev.dhanfinix.roomguard.core.LocalBackupManager
 import dev.dhanfinix.roomguard.core.RestoreConfig
 import dev.dhanfinix.roomguard.core.SyncStatus
@@ -32,32 +31,37 @@ import dev.dhanfinix.roomguard.ui.component.LocalDataGroup
 import java.io.File
 
 /**
- * Drop-in Compose backup screen.
+ * A drop-in, state-driven Compose screen that provides a comprehensive UI for managing 
+ * database backups and restorations.
  *
- * Usage:
+ * This screen is designed to be the primary interface for users to interact with RoomGuard.
+ * It coordinates with [RoomGuardBackupViewModel] to handle:
+ * - **Cloud Synchronization**: Connecting to Google Drive, backing up, and restoring data.
+ * - **Local Portability**: Exporting data to local files (CSV/GZIP), sharing files via system 
+ *   sheets, and importing files from the device storage.
+ * - **Integrity Checks**: Displaying confirmation dialogs when data loss or overwrites are detected.
+ *
+ * ### Integration Example:
  * ```kotlin
  * val roomGuard = RoomGuard.Builder(context)
- *     .appName("AppName")
- *     .databaseProvider(myDatabaseProvider)
- *     .tokenStore(myTokenStore)
- *     .csvSerializer(myCsvSerializer)
+ *     .database(db, "app_db.db", listOf("users", "settings"))
  *     .build()
  *
- * RoomGuardBackupScreen(
- *     driveManager = roomGuard.driveManager,
- *     localManager = roomGuard.localManager,
- *     tokenStore = roomGuard.tokenStore,
- *     restoreConfig = RestoreConfig(tables = listOf("your_table"), mode = RestoreMode.ATTACH)
- * )
+ * // In your Compose navigation or screen:
+ * RoomGuardBackupScreen(roomGuard = roomGuard)
  * ```
  *
- * The screen handles:
- * - Drive auth intent launching
- * - File share via ACTION_SEND
- * - File save via CREATE_DOCUMENT
- * - File import via OPEN_DOCUMENT
- * - Confirmation dialogs
- * - Loading overlay
+ * ### Event Handling Mechanics
+ * The screen internally manages several system-level contracts:
+ * - `ActivityResultContracts.StartIntentSenderForResult`: For Google Identity authorization.
+ * - `ActivityResultContracts.CreateDocument`: For saving backup files to the user's Downloads/Documents.
+ * - `ActivityResultContracts.OpenDocument`: For picking and importing local backup files.
+ *
+ * @param driveManager  The engine for cloud operations.
+ * @param localManager  The engine for local file operations.
+ * @param tokenStore    The storage for OAuth2 access tokens.
+ * @param restoreConfig Strategy and table configuration for the restore process.
+ * @param modifier      Modifier to be applied to the layout.
  */
 @Composable
 fun RoomGuardBackupScreen(
@@ -92,30 +96,7 @@ internal fun RoomGuardBackupScreenContent(
     val driveAuthLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            try {
-                val authResult = Identity.getAuthorizationClient(context)
-                    .getAuthorizationResultFromIntent(result.data)
-                
-                // The user must explicitly check the Drive permission box.
-                // If they don't, GIS still returns OK but the token lacks the scope,
-                // leading to a 403 -> refresh crash later.
-                val driveScope = "https://www.googleapis.com/auth/drive.appdata"
-                val hasDriveScope = authResult.grantedScopes?.contains(driveScope) == true
-                
-                if (hasDriveScope) {
-                    viewModel.onAction(BackupScreenAction.AuthResult(authResult.accessToken))
-                } else {
-                    viewModel.onAction(BackupScreenAction.AuthFailed("Google Drive permission is required. Please make sure to check the box to allow access."))
-                }
-            } catch (e: Exception) {
-                viewModel.onAction(BackupScreenAction.AuthFailed(e.message ?: e.toString()))
-            }
-        } else {
-            val msg = if (result.resultCode == Activity.RESULT_CANCELED) "Sign-in canceled" 
-                      else "Sign-in failed (result: ${result.resultCode})"
-            viewModel.onAction(BackupScreenAction.AuthFailed(msg))
-        }
+        viewModel.onAction(BackupScreenAction.AuthResult(result.resultCode, result.data))
     }
 
     // Save backup file to device launcher
@@ -124,9 +105,7 @@ internal fun RoomGuardBackupScreenContent(
     ) { uri ->
         uri?.let { dest ->
             pendingSaveContent?.let { (_, path) ->
-                context.contentResolver.openOutputStream(dest)?.use { out ->
-                    File(path).inputStream().copyTo(out)
-                }
+                viewModel.onAction(BackupScreenAction.SaveToUri(dest.toString(), path, context.contentResolver))
             }
             pendingSaveContent = null
         }
@@ -147,22 +126,11 @@ internal fun RoomGuardBackupScreenContent(
                         val request = IntentSenderRequest.Builder(event.pendingIntent.intentSender).build()
                         driveAuthLauncher.launch(request)
                     } catch (e: IntentSender.SendIntentException) {
-                        viewModel.onAction(BackupScreenAction.AuthFailed(e.message ?: e.toString()))
+                        viewModel.onAction(BackupScreenAction.AuthError(e.message ?: e.toString()))
                     }
                 }
                 is BackupUiEvent.ShareFile -> {
-                    val file = File(event.filePath)
-                    val uri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        file
-                    )
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = event.mimeType
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    context.startActivity(Intent.createChooser(intent, "Export Data"))
+                    RoomGuardActionHelper.shareFile(context, event.filePath, event.mimeType)
                 }
                 is BackupUiEvent.SaveFileToDevice -> {
                     pendingSaveContent = event.fileName to event.filePath
@@ -363,7 +331,8 @@ internal fun RoomGuardBackupScreenContent(
                     onShareLocal = { viewModel.onAction(BackupScreenAction.ExportLocal) },
                     onSaveLocal = { viewModel.onAction(BackupScreenAction.SaveLocalToDevice) },
                     onImportLocal = {
-                        importLauncher.launch(arrayOf("text/*", "application/gzip", "application/x-gzip"))
+                        val mimeTypes = LocalBackupFormat.values().map { it.mimeType }.toTypedArray()
+                        importLauncher.launch(mimeTypes)
                     }
                 )
             }

@@ -1,4 +1,4 @@
-name: Publish to GitHub Packages
+name: Publish to Maven Central
 
 on:
   push:
@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -26,12 +26,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       - name: Publish all modules
-        run: |
-          ./gradlew \
-            :roomguard-core:publish \
-            :roomguard-drive:publishReleasePublicationToGitHubPackagesRepository \
-            :roomguard-local:publishReleasePublicationToGitHubPackagesRepository \
-            :roomguard-hilt:publishReleasePublicationToGitHubPackagesRepository \
-            :roomguard-ui:publishReleasePublicationToGitHubPackagesRepository
+        run: ./gradlew publishToMavenCentral --no-configuration-cache
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          signingInMemoryKeyId: ${{ secrets.GPG_SIGNING_KEY_ID }}
+          signingInMemoryKeyPassword: ${{ secrets.GPG_SIGNING_KEY_PASSWORD }}
+          signingInMemoryKey: ${{ secrets.GPG_SIGNING_KEY }}

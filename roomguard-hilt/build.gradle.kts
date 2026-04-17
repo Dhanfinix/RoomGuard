@@ -3,12 +3,12 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.hilt)
     kotlin("kapt")
-    `maven-publish`
+    alias(libs.plugins.maven.publish)
 }
 
 android {
     namespace = "dev.dhanfinix.roomguard.hilt"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 26
@@ -16,12 +16,12 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "11"
     }
 }
 
@@ -31,25 +31,3 @@ dependencies {
     kapt(libs.hilt.compiler)
 }
 
-afterEvaluate {
-    publishing {
-        publications {
-            create<MavenPublication>("release") {
-                from(components["release"])
-                groupId = "dev.dhanfinix.roomguard"
-                artifactId = "roomguard-hilt"
-                version = "1.0.0"
-            }
-        }
-        repositories {
-            maven {
-                name = "GitHubPackages"
-                url = uri("https://maven.pkg.github.com/Dhanfinix/RoomGuard")
-                credentials {
-                    username = System.getenv("GITHUB_ACTOR")
-                    password = System.getenv("GITHUB_TOKEN")
-                }
-            }
-        }
-    }
-}

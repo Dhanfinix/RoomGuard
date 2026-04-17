@@ -1,19 +1,16 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
-    `maven-publish`
+    alias(libs.plugins.maven.publish)
 }
 
-group = "dev.dhanfinix.roomguard"
-version = "1.0.0"
-
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
 }
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
     }
 }
 
@@ -25,22 +22,3 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
 }
 
-publishing {
-    publications {
-        create<MavenPublication>("release") {
-            from(components["java"])
-            groupId = "dev.dhanfinix.roomguard"
-            artifactId = "roomguard-core"
-        }
-    }
-    repositories {
-        maven {
-            name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/Dhanfinix/RoomGuard")
-            credentials {
-                username = System.getenv("GITHUB_ACTOR")
-                password = System.getenv("GITHUB_TOKEN")
-            }
-        }
-    }
-}

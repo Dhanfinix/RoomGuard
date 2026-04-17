@@ -14,14 +14,15 @@ abstract class NoteDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: NoteDatabase? = null
 
-        const val DB_NAME = "notes"
+        const val TABLE_NAME = "notes"
+        const val DB_FILE_NAME = "notes.db"
 
         fun getInstance(context: Context): NoteDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     NoteDatabase::class.java,
-                    "$DB_NAME.db"
+                    DB_FILE_NAME
                 ).build().also { INSTANCE = it }
             }
         }

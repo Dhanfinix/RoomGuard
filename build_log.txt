@@ -1,0 +1,73 @@
+> Task :roomguard-core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :roomguard-core:compileKotlin UP-TO-DATE
+> Task :roomguard-core:compileJava NO-SOURCE
+> Task :roomguard-core:processResources NO-SOURCE
+> Task :roomguard-core:classes UP-TO-DATE
+> Task :roomguard-core:jar UP-TO-DATE
+> Task :roomguard-drive:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :roomguard-drive:preBuild UP-TO-DATE
+> Task :roomguard-drive:preDebugBuild UP-TO-DATE
+> Task :roomguard-drive:generateDebugResValues UP-TO-DATE
+> Task :roomguard-drive:generateDebugResources UP-TO-DATE
+> Task :roomguard-drive:packageDebugResources UP-TO-DATE
+> Task :roomguard-drive:parseDebugLocalResources UP-TO-DATE
+> Task :roomguard-drive:generateDebugRFile UP-TO-DATE
+> Task :roomguard-drive:compileDebugKotlin UP-TO-DATE
+> Task :roomguard-drive:javaPreCompileDebug UP-TO-DATE
+> Task :roomguard-drive:compileDebugJavaWithJavac NO-SOURCE
+> Task :roomguard-drive:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :roomguard-local:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :roomguard-local:preBuild UP-TO-DATE
+> Task :roomguard-local:preDebugBuild UP-TO-DATE
+> Task :roomguard-local:generateDebugResValues UP-TO-DATE
+> Task :roomguard-local:generateDebugResources UP-TO-DATE
+> Task :roomguard-local:packageDebugResources UP-TO-DATE
+> Task :roomguard-local:parseDebugLocalResources UP-TO-DATE
+> Task :roomguard-local:generateDebugRFile UP-TO-DATE
+> Task :roomguard-local:compileDebugKotlin UP-TO-DATE
+> Task :roomguard-local:javaPreCompileDebug UP-TO-DATE
+> Task :roomguard-local:compileDebugJavaWithJavac NO-SOURCE
+> Task :roomguard-local:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :roomguard-ui:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :roomguard-ui:preBuild UP-TO-DATE
+> Task :roomguard-ui:preDebugBuild UP-TO-DATE
+> Task :roomguard-ui:generateDebugResValues UP-TO-DATE
+> Task :roomguard-ui:generateDebugResources UP-TO-DATE
+> Task :roomguard-ui:packageDebugResources UP-TO-DATE
+> Task :roomguard-ui:parseDebugLocalResources UP-TO-DATE
+> Task :roomguard-ui:generateDebugRFile UP-TO-DATE
+
+> Task :roomguard-ui:compileDebugKotlin FAILED
+e: file:///Users/muhammadramdhan/StudioProjects/RoomGuard/roomguard-ui/src/main/kotlin/dev/dhanfinix/roomguard/ui/RoomGuardBackupScreen.kt:328:41 Unresolved reference 'LocalBackupFormat'.
+e: file:///Users/muhammadramdhan/StudioProjects/RoomGuard/roomguard-ui/src/main/kotlin/dev/dhanfinix/roomguard/ui/RoomGuardBackupScreen.kt:328:72 Unresolved reference 'mimeType'.
+e: file:///Users/muhammadramdhan/StudioProjects/RoomGuard/roomguard-ui/src/main/kotlin/dev/dhanfinix/roomguard/ui/RoomGuardBackupScreen.kt:328:74 Unresolved reference 'it'.
+e: file:///Users/muhammadramdhan/StudioProjects/RoomGuard/roomguard-ui/src/main/kotlin/dev/dhanfinix/roomguard/ui/RoomGuardBackupScreen.kt:328:88 Overload resolution ambiguity between candidates:
+fun <reified T> Collection<T>.toTypedArray(): Array<T>
+fun BooleanArray.toTypedArray(): Array<Boolean>
+fun ByteArray.toTypedArray(): Array<Byte>
+fun CharArray.toTypedArray(): Array<Char>
+fun DoubleArray.toTypedArray(): Array<Double>
+fun FloatArray.toTypedArray(): Array<Float>
+fun IntArray.toTypedArray(): Array<Int>
+fun LongArray.toTypedArray(): Array<Long>
+fun ShortArray.toTypedArray(): Array<Short>
+fun UByteArray.toTypedArray(): Array<UByte>
+fun UIntArray.toTypedArray(): Array<UInt>
+fun ULongArray.toTypedArray(): Array<ULong>
+fun UShortArray.toTypedArray(): Array<UShort>
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':roomguard-ui:compileDebugKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 4s
+24 actionable tasks: 1 executed, 23 up-to-date
