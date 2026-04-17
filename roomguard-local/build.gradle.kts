@@ -25,6 +25,8 @@ android {
 
 dependencies {
     api(project(":roomguard-core"))
+    api(libs.room.runtime)
+    api(libs.room.ktx)
     testImplementation(project(":roomguard"))
     implementation(libs.kotlinx.coroutines.android)
 

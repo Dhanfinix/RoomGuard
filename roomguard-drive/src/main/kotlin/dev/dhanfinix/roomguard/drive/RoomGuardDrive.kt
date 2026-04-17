@@ -1,6 +1,8 @@
 package dev.dhanfinix.roomguard.drive
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import androidx.credentials.ClearCredentialStateRequest
@@ -99,6 +101,42 @@ class RoomGuardDrive(
             // but the package name + SHA-1 must match in the console for this project.
             .build()
         return authClient.authorize(request).await()
+    }
+
+    /**
+     * Handles the result from the Drive authentication launcher.
+     * Extracts the access token and verifies the required scopes.
+     *
+     * @param resultCode The result code from the activity result
+     * @param data The intent data from the activity result
+     * @return Result containing the access token on success
+     */
+    fun handleAuthResult(resultCode: Int, data: Intent?): Result<String> {
+        if (resultCode != Activity.RESULT_OK) {
+            val msg = if (resultCode == Activity.RESULT_CANCELED) "Sign-in canceled"
+            else "Sign-in failed (result: $resultCode)"
+            return Result.failure(Exception(msg))
+        }
+
+        return try {
+            val authResult = authClient.getAuthorizationResultFromIntent(data)
+            
+            // The user must explicitly check the Drive permission box.
+            // If they don't, GIS still returns OK but the token lacks the scope.
+            val driveScope = Scope(DriveScopes.DRIVE_APPDATA).toString()
+            val hasDriveScope = authResult.grantedScopes?.any { 
+                it.equals(driveScope, ignoreCase = true) || it.contains("drive.appdata") 
+            } == true
+            
+            val token = authResult.accessToken
+            if (hasDriveScope && token != null) {
+                Result.success(token)
+            } else {
+                Result.failure(Exception("Google Drive permission is required. Please make sure to check the box to allow access."))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     // ── Drive Service Builder ──────────────────────────────────────────────────

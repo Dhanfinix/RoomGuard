@@ -21,15 +21,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.dhanfinix.roomguard.RoomGuard
-import dev.dhanfinix.roomguard.core.RestoreConfig
-import dev.dhanfinix.roomguard.core.RestoreMode
-import dev.dhanfinix.roomguard.drive.token.DataStoreDriveTokenStore
-import dev.dhanfinix.roomguard.sample.data.NoteCsvSerializer
+import dev.dhanfinix.roomguard.RoomGuardBackupScreen
 import dev.dhanfinix.roomguard.sample.data.NoteDatabase
-import dev.dhanfinix.roomguard.sample.data.NoteDatabase.Companion.DB_NAME
-import dev.dhanfinix.roomguard.sample.data.NoteDatabaseProvider
+import dev.dhanfinix.roomguard.sample.data.NoteDatabase.Companion.DB_FILE_NAME
+import dev.dhanfinix.roomguard.sample.data.NoteDatabase.Companion.TABLE_NAME
 import dev.dhanfinix.roomguard.sample.data.NoteEntity
-import dev.dhanfinix.roomguard.ui.RoomGuardBackupScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,16 +35,14 @@ class MainActivity : ComponentActivity() {
         val db = NoteDatabase.getInstance(this)
         val dao = db.noteDao()
 
-        // RoomGuard wiring
-        val tokenStore = DataStoreDriveTokenStore(this)
-        val dbProvider = NoteDatabaseProvider(this, db)
+        // RoomGuard wiring - Zero-Config setup!
         val roomGuard = RoomGuard.Builder(this)
-            .appName(getString(dev.dhanfinix.roomguard.sample.R.string.app_name))
-            .databaseProvider(dbProvider)
-            .tokenStore(tokenStore)
-            .csvSerializer(NoteCsvSerializer(dao))
+            .database(
+                db = db, 
+                dbFileName = DB_FILE_NAME, 
+                tables = listOf(TABLE_NAME)
+            )
             .build()
-        val restoreConfig = RestoreConfig(tables = listOf(DB_NAME), mode = RestoreMode.ATTACH)
 
         setContent {
             MaterialTheme(
@@ -56,8 +50,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 SampleApp(
                     dao = dao,
-                    roomGuard = roomGuard,
-                    restoreConfig = restoreConfig
+                    roomGuard = roomGuard
                 )
             }
         }
@@ -68,8 +61,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun SampleApp(
     dao: dev.dhanfinix.roomguard.sample.data.NoteDao,
-    roomGuard: RoomGuard,
-    restoreConfig: RestoreConfig
+    roomGuard: RoomGuard
 ) {
     val mainViewModel: MainViewModel = viewModel(factory = MainViewModel.Factory(dao))
     val notes by mainViewModel.notes.collectAsState()
@@ -100,10 +92,7 @@ private fun SampleApp(
             }
         ) { padding ->
             RoomGuardBackupScreen(
-                driveManager = roomGuard.driveManager(),
-                localManager = roomGuard.localManager(),
-                tokenStore = roomGuard.tokenStore(),
-                restoreConfig = restoreConfig,
+                roomGuard = roomGuard,
                 modifier = Modifier.padding(padding)
             )
         }

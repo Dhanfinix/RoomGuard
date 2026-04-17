@@ -1,5 +1,7 @@
 package dev.dhanfinix.roomguard.ui
 
+import android.content.ContentResolver
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -46,12 +48,13 @@ class RoomGuardBackupViewModel(
             is BackupScreenAction.Backup           -> onBackupRequested()
             is BackupScreenAction.Refresh          -> refreshStatus()
             is BackupScreenAction.Restore          -> onRestoreRequested(action.strategy)
-            is BackupScreenAction.AuthResult       -> handleAuthResult(action.token, action.error)
-            is BackupScreenAction.AuthFailed       -> handleAuthResult(null, action.error)
+            is BackupScreenAction.AuthResult       -> handleAuthRawResult(action.resultCode, action.data)
+            is BackupScreenAction.AuthError        -> showError(action.message)
             is BackupScreenAction.SetLocalFormat   -> setLocalFormat(action.format)
             is BackupScreenAction.ExportLocal      -> exportLocal()
             is BackupScreenAction.SaveLocalToDevice -> saveLocalToDevice()
-            is BackupScreenAction.ImportLocal -> onImportRequested(action.uri, action.strategy)
+            is BackupScreenAction.SaveToUri        -> handleSaveToUri(action.uriPath, action.filePath, action.contentResolver)
+            is BackupScreenAction.ImportLocal      -> onImportRequested(action.uri, action.strategy)
         }
     }
 
@@ -118,18 +121,22 @@ class RoomGuardBackupViewModel(
         }
     }
 
-    private fun handleAuthResult(token: String?, error: String? = null) {
+    private fun handleAuthRawResult(resultCode: Int, data: Intent?) {
+        val manager = driveManager ?: return
         val store = tokenStore ?: return
-        if (token != null) {
-            viewModelScope.launch {
+        
+        viewModelScope.launch {
+            setCloudProcessing(true, "Verifying authorization...")
+            val result = manager.handleAuthResult(resultCode, data)
+            result.onSuccess { token ->
                 store.setAuthorized(true)
                 store.saveToken(token)
                 _uiState.update { it.copy(isDriveAuthorized = true) }
                 fetchAndHandleFirstConnect(token)
+            }.onFailure { e ->
+                showError(e.message ?: "Drive authorization failed")
             }
-        } else {
-            val msg = error ?: "Drive authorization failed"
-            showError(msg)
+            setCloudProcessing(false)
         }
     }
 
@@ -258,6 +265,23 @@ class RoomGuardBackupViewModel(
                 is BackupResult.Error -> showError(result.message)
             }
             setLocalProcessing(false)
+        }
+    }
+
+    private fun handleSaveToUri(uriPath: String, filePath: String, contentResolver: ContentResolver) {
+        viewModelScope.launch {
+            try {
+                val destUri = android.net.Uri.parse(uriPath)
+                contentResolver.openOutputStream(destUri)?.use { out ->
+                    java.io.File(filePath).inputStream().use { input ->
+                        input.copyTo(out)
+                        out.flush()
+                    }
+                }
+                showSuccess("File saved successfully")
+            } catch (e: Exception) {
+                showError("Failed to save file: ${e.message}")
+            }
         }
     }
 
@@ -435,8 +459,9 @@ sealed interface BackupScreenAction {
     data object Backup : BackupScreenAction
     data object Refresh : BackupScreenAction
     data class Restore(val strategy: RestoreStrategy? = null) : BackupScreenAction
-    data class AuthResult(val token: String?, val error: String? = null) : BackupScreenAction
-    data class AuthFailed(val error: String? = null) : BackupScreenAction
+    data class AuthResult(val resultCode: Int, val data: android.content.Intent?) : BackupScreenAction
+    data class AuthError(val message: String) : BackupScreenAction
+    data class SaveToUri(val uriPath: String, val filePath: String, val contentResolver: android.content.ContentResolver) : BackupScreenAction
     data class SetLocalFormat(val format: LocalBackupFormat) : BackupScreenAction
     data object ExportLocal : BackupScreenAction
     data object SaveLocalToDevice : BackupScreenAction
