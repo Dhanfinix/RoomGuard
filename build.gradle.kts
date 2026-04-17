@@ -32,7 +32,7 @@ subprojects {
             signAllPublications()
 
             pom {
-                name.set(project.name.replace("-", " ").capitalize())
+                name.set(project.name.replace("-", " ").replaceFirstChar { it.uppercase() })
                 description.set(
                     when (project.name) {
                         "roomguard" -> "Main library for RoomGuard backup and restore."
@@ -46,6 +46,18 @@ subprojects {
                 )
             }
         }
+
+        // Explicit fallback for in-memory signing if standard auto-detection fails
+        extensions.configure<org.gradle.plugins.signing.SigningExtension>("signing") {
+            val keyId = project.findProperty("signing.keyId")?.toString()
+            val password = project.findProperty("signing.password")?.toString()
+            val secretKey = project.findProperty("signing.secretKey")?.toString()
+
+            if (keyId != null && password != null && secretKey != null) {
+                @Suppress("UnstableApiUsage")
+                useInMemoryPgpKeys(keyId, secretKey, password)
+            }
+        }
     }
 
     // Helper to find a property from local.properties or System Environment
@@ -56,16 +68,18 @@ subprojects {
             ?: project.findProperty(name)?.toString()
     }
 
-    // Inject properties into the project extension so plugins can see them
-    listOf(
-        "mavenCentralUsername",
-        "mavenCentralPassword",
-        "signingInMemoryKeyId",
-        "signingInMemoryKeyPassword",
-        "signingInMemoryKey"
-    ).forEach { key ->
-        findConfig(key)?.let { value ->
-            project.extensions.extraProperties.set(key, value)
+    // Inject properties into the project extension so plugins can see them.
+    // Standard names for Vanniktech/Signing plugins:
+    // "signing.keyId", "signing.password", "signing.secretKey"
+    mapOf(
+        "mavenCentralUsername" to "mavenCentralUsername",
+        "mavenCentralPassword" to "mavenCentralPassword",
+        "signingInMemoryKeyId" to "signing.keyId",
+        "signingInMemoryKeyPassword" to "signing.password",
+        "signingInMemoryKey" to "signing.secretKey"
+    ).forEach { (envKey, gradleKey) ->
+        findConfig(envKey)?.let { value ->
+            project.extensions.extraProperties.set(gradleKey, value)
         }
     }
 }
