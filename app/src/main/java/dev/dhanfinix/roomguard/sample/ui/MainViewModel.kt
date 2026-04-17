@@ -24,6 +24,7 @@ class MainViewModel(private val dao: NoteDao) : ViewModel() {
     fun addNote(title: String, body: String) {
         viewModelScope.launch {
             dao.insert(NoteEntity(title = title, body = body))
+            refresh()
         }
     }
 
