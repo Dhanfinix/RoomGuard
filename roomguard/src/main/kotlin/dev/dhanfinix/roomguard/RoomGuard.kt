@@ -16,9 +16,20 @@ import dev.dhanfinix.roomguard.local.RoomGuardLocal
 import androidx.room.RoomDatabase
 
 /**
- * Shared initialization facade for RoomGuard.
+ * The main architectural facade and synchronization coordinator for the RoomGuard library.
  *
- * Build once, then reuse the created managers throughout the host app.
+ * `RoomGuard` is designed as a single, immutable instance that holds all the necessary
+ * managers and configuration required to protect your application's database.
+ *
+ * ### Architectural Overview
+ * The library follows a "Facade" pattern to hide the complexity of:
+ * - Google Drive OAuth2 & API orchestration.
+ * - Local filesystem CSV serialization and compression.
+ * - Room/SQLite WAL checkpointing and transaction management.
+ *
+ * ### Lifecycle Note
+ * It is recommended to initialize a single `RoomGuard` instance (e.g., via Dependency Injection
+ * or as a singleton in your Application class) and reuse it throughout your app's lifecycle.
  */
 class RoomGuard(
     private val _driveManager: RoomGuardDrive?,
@@ -26,11 +37,28 @@ class RoomGuard(
     private val _tokenStore: DriveTokenStore?,
     private val _restoreConfig: RestoreConfig
 ) {
+    /** The manager responsible for Google Drive operations. Null if Drive features are not configured. */
     fun driveManager() = _driveManager
+
+    /** The manager responsible for local file export/import. Null if [CsvSerializer] is not provided. */
     fun localManager() = _localManager
+
+    /** The storage used to persist OAuth2 tokens. Managed by the [driveManager]. */
     fun tokenStore() = _tokenStore
+
+    /** The configuration (tables, mode, strategy) used for restoration operations. */
     fun restoreConfig() = _restoreConfig
 
+    /**
+     * Fluent Builder for creating [RoomGuard] instances with sensible defaults.
+     *
+     * Example (Minimum Zero-Config Setup):
+     * ```kotlin
+     * val roomGuard = RoomGuard.Builder(context)
+     *     .database(db, "notes.db", listOf("notes"))
+     *     .build()
+     * ```
+     */
     class Builder(private val context: Context) {
         private var appName: String? = null
         private var databaseProvider: DatabaseProvider? = null
@@ -42,10 +70,18 @@ class RoomGuard(
         private var authClient: AuthorizationClient? = null
         private var signInClient: SignInClient? = null
 
+        /**
+         * Sets the app name used for creating Google Drive backups.
+         * Default: Uses the name from your AndroidManifest.
+         */
         fun appName(value: String) = apply {
             appName = value.normalizedOrThrow("appName")
         }
 
+        /**
+         * Connects a custom [DatabaseProvider] for non-Room databases.
+         * Note: If you use Room, use the [database] helper instead.
+         */
         fun databaseProvider(value: DatabaseProvider) = apply {
             databaseProvider = value
         }
@@ -74,26 +110,41 @@ class RoomGuard(
             }
         }
 
+        /**
+         * Connects a custom [DriveTokenStore] to manage OAuth tokens.
+         * Default: Uses a DataStore-backed storage (`DataStoreDriveTokenStore`).
+         */
         fun tokenStore(value: DriveTokenStore) = apply {
             tokenStore = value
         }
 
+        /**
+         * Connects a custom [CsvSerializer] for manual data portability logic.
+         * Note: If you use Room, use the [database] helper instead.
+         */
         fun csvSerializer(value: CsvSerializer) = apply {
             csvSerializer = value
         }
 
+        /**
+         * Customize the prefix used for local CSV file exports.
+         * Default: "{appName}_backup"
+         */
         fun localFilePrefix(value: String) = apply {
             localFilePrefix = value.normalizedOrThrow("localFilePrefix")
         }
 
+        /** Sets library-wide configuration settings. */
         fun config(value: RoomGuardConfig) = apply {
             config = value
         }
 
+        /** Sets the strategy and metadata for the restoration process. */
         fun restoreConfig(value: RestoreConfig) = apply {
             restoreConfig = value
         }
 
+        /** Provide custom Google Identity clients (useful for testing or advanced auth flows). */
         fun driveClients(
             authClient: AuthorizationClient,
             signInClient: SignInClient

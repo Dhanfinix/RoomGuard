@@ -31,32 +31,37 @@ import dev.dhanfinix.roomguard.ui.component.LocalDataGroup
 import java.io.File
 
 /**
- * Drop-in Compose backup screen.
+ * A drop-in, state-driven Compose screen that provides a comprehensive UI for managing 
+ * database backups and restorations.
  *
- * Usage:
+ * This screen is designed to be the primary interface for users to interact with RoomGuard.
+ * It coordinates with [RoomGuardBackupViewModel] to handle:
+ * - **Cloud Synchronization**: Connecting to Google Drive, backing up, and restoring data.
+ * - **Local Portability**: Exporting data to local files (CSV/GZIP), sharing files via system 
+ *   sheets, and importing files from the device storage.
+ * - **Integrity Checks**: Displaying confirmation dialogs when data loss or overwrites are detected.
+ *
+ * ### Integration Example:
  * ```kotlin
  * val roomGuard = RoomGuard.Builder(context)
- *     .appName("AppName")
- *     .databaseProvider(myDatabaseProvider)
- *     .tokenStore(myTokenStore)
- *     .csvSerializer(myCsvSerializer)
+ *     .database(db, "app_db.db", listOf("users", "settings"))
  *     .build()
  *
- * RoomGuardBackupScreen(
- *     driveManager = roomGuard.driveManager,
- *     localManager = roomGuard.localManager,
- *     tokenStore = roomGuard.tokenStore,
- *     restoreConfig = RestoreConfig(tables = listOf("your_table"), mode = RestoreMode.ATTACH)
- * )
+ * // In your Compose navigation or screen:
+ * RoomGuardBackupScreen(roomGuard = roomGuard)
  * ```
  *
- * The screen handles:
- * - Drive auth intent launching
- * - File share via ACTION_SEND
- * - File save via CREATE_DOCUMENT
- * - File import via OPEN_DOCUMENT
- * - Confirmation dialogs
- * - Loading overlay
+ * ### Event Handling Mechanics
+ * The screen internally manages several system-level contracts:
+ * - `ActivityResultContracts.StartIntentSenderForResult`: For Google Identity authorization.
+ * - `ActivityResultContracts.CreateDocument`: For saving backup files to the user's Downloads/Documents.
+ * - `ActivityResultContracts.OpenDocument`: For picking and importing local backup files.
+ *
+ * @param driveManager  The engine for cloud operations.
+ * @param localManager  The engine for local file operations.
+ * @param tokenStore    The storage for OAuth2 access tokens.
+ * @param restoreConfig Strategy and table configuration for the restore process.
+ * @param modifier      Modifier to be applied to the layout.
  */
 @Composable
 fun RoomGuardBackupScreen(

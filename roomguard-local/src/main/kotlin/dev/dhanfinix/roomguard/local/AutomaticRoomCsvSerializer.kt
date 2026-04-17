@@ -10,16 +10,33 @@ import kotlinx.coroutines.withContext
 import java.lang.StringBuilder
 
 /**
- * A generic [CsvSerializer] that automatically discovers all tables in a [RoomDatabase]
- * and handles raw SQL based export/import.
+ * A generic and robust implementation of [CsvSerializer] that provides "Zero-Config" data
+ * portability for any Android Room database.
  *
- * Removes the need for host applications to write custom serialization per-entity.
+ * Instead of requiring the developer to implement serialization logic for every entity,
+ * this class uses SQLite's `sqlite_master` metadata to automatically:
+ * 1. Discover all user-defined tables.
+ * 2. Export their contents into a section-based CSV format.
+ * 3. Re-import them by dynamically building "INSERT OR REPLACE" statements.
  *
- * Format:
- * [TABLE_NAME]
- * col1,col2,...
- * val1,val2,...
+ * ### CSV Format Architecture
+ * The exported CSV uses a multi-section format to support multiple tables in a single file:
+ * ```
+ * [table_name_1]
+ * column1,column2,column3
+ * value1,value2,value3
+ *
+ * [table_name_2]
  * ...
+ * ```
+ *
+ * ### Security & Integrity
+ * - Automatically filters out Android/Room internal tables (e.g., `android_metadata`, `room_master_table`).
+ * - Handles CSV escaping (quotes, commas, newlines) to prevent data corruption.
+ * - Executes imports within a single database transaction for atomicity.
+ *
+ * @param database      The RoomDatabase instance to inspect and serialize.
+ * @param excludeTables Optional list of table names to ignore during discovery.
  */
 class AutomaticRoomCsvSerializer(
     private val database: RoomDatabase,

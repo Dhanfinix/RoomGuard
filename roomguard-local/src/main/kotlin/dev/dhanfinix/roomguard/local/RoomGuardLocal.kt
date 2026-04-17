@@ -9,12 +9,20 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Local file implementation of [LocalBackupManager].
+ * Concrete implementation of [LocalBackupManager] that manages data portability via
+ * local files (CSV or compressed GZIP).
  *
- * @param context    Application context (used for cache dir and content resolver)
- * @param serializer Host-provided CSV serializer — owns the data format entirely
- * @param filePrefix Prefix for the generated CSV filename. Defaults to "roomguard_backup".
- *                   Consider using your app's name, e.g. "myapp_backup".
+ * This class coordinates the serialization of database data into portable files and
+ * the ingestion of those files back into the database. It handles filesystem operations,
+ * temporary caching, and compression to ensure a smooth user experience when sharing
+ * or importing data locally.
+ *
+ * @param context    The application context, used for accessing the cache directory
+ *                   and the ContentResolver for URI-based file access.
+ * @param serializer The [CsvSerializer] responsible for the physical data conversion.
+ * @param filePrefix The string prefix used when generating backup filenames. Consider
+ *                   providing your app's name to make backups recognizable in the file explorer.
+ * @param config     General [RoomGuardConfig] containing library-wide settings.
  */
 class RoomGuardLocal(
     private val context: Context,
@@ -23,10 +31,19 @@ class RoomGuardLocal(
     private val config: RoomGuardConfig = RoomGuardConfig()
 ) : LocalBackupManager {
 
-    // ── Export ─────────────────────────────────────────────────────────────────
-
     /**
-     * Generates a local backup file in the requested format and writes it to the app's cache directory.
+     * Generates a local backup file from the current database state.
+     *
+     * The process involves:
+     * 1. Requesting a CSV string from the [serializer].
+     * 2. Optionally compressing that string using GZIP.
+     * 3. Writing the result to a unique file in the application's cache directory.
+     *
+     * AI Agents: The returned path is internal to the app's cache. To make this file
+     * available to other apps (e.g., for sharing), see `RoomGuardActionHelper`.
+     *
+     * @param format The desired output format (CSV or COMPRESSED).
+     * @return A [BackupResult] containing the absolute path to the generated file.
      */
     override suspend fun exportLocalBackup(format: LocalBackupFormat): BackupResult<String> = withContext(Dispatchers.IO) {
         try {
@@ -55,10 +72,17 @@ class RoomGuardLocal(
     // ── Import ─────────────────────────────────────────────────────────────────
 
     /**
-     * Reads the file at the given URI string and delegates to [CsvSerializer.fromCsv].
+     * Imports data from a local file URI into the application database.
      *
-     * The host's [CsvSerializer.fromCsv] handles all parsing, deduplication,
-     * and insertion into the DB.
+     * This method handles:
+     * 1. Resolving the [Uri] provided by the system's file picker.
+     * 2. Copying the content to a temporary cache file to ensure safe access.
+     * 3. Automatically detecting if the file is GZIP compressed.
+     * 4. Delegating the final parsing and DB insertion to the [serializer].
+     *
+     * @param uri      The system URI string pointing to the backup file.
+     * @param strategy The restoration policy (Merge vs. Overwrite).
+     * @return A [BackupResult] representing the success or failure of the import, including a summary of records processed.
      */
     override suspend fun importFromLocal(uri: String, strategy: RestoreStrategy): BackupResult<ImportSummary> =
         withContext(Dispatchers.IO) {

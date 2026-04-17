@@ -31,15 +31,26 @@ import kotlinx.coroutines.withContext
 import java.io.FileOutputStream
 
 /**
- * Google Drive implementation of [DriveBackupManager].
+ * Implementation of [DriveBackupManager] that leverages Google Drive's `appDataFolder`
+ * for cloud-based database persistence.
  *
- * Also provides authorization methods ([isDriveAuthorized], [requestDriveAuthorization])
- * which are not part of the core interface due to their Android-specific return types.
+ * This class is the core engine for cloud protection in RoomGuard. it orchestrates:
+ * 1. **Authentication**: Integration with Google Identity Services (GIS) for OAuth2 tokens.
+ * 2. **Integrity**: WAL checkpointing and atomic file copies before upload.
+ * 3. **Concurrency**: Automatic file updates vs. creation in the restricted `appDataFolder`.
+ * 4. **Atomicity**: Transaction-based restorations to prevent partial data corruption.
  *
- * @param context           Application context (used for Drive auth client, cache dir)
- * @param appName           Host app name — used as Drive service application name
- * @param databaseProvider  Host-provided database access contract
- * @param tokenStore        Where to persist/retrieve the OAuth token
+ * ### AppDataFolder Security
+ * Every backup is stored in a hidden, app-specific folder on the user's Google Drive. 
+ * This ensures that other applications cannot access the user's database backups.
+ *
+ * @param context           Application context, used for GIS and temporary file management.
+ * @param appName           The application name used for identifying the Drive service.
+ * @param databaseProvider  The [DatabaseProvider] contract that bridges this engine to SQLite/Room.
+ * @param tokenStore        The persistence layer for the OAuth2 access token.
+ * @param config            General configuration (compression, timeouts, etc.).
+ * @param authClient        The GIS client for authorization requests.
+ * @param signInClient      The GIS client for account management and sign-out.
  */
 class RoomGuardDrive(
     private val context: Context,
@@ -71,10 +82,14 @@ class RoomGuardDrive(
     // ── Authorization (not part of core interface) ─────────────────────────────
 
     /**
-     * Checks if the app already has a valid Drive authorization token.
-     * If a new token is obtained silently, [onTokenReceived] is called with it.
+     * Checks if the application already holds a valid authorization token for Google Drive.
      *
-     * @return true if authorized (no UI resolution needed)
+     * This method attempts to silenty refresh the token if one exists in the [tokenStore].
+     * If successful, the token is passed to [onTokenReceived] for immediate use.
+     *
+     * @param onTokenReceived High-order callback triggered when a valid token is available.
+     * @return true if the user is fully authorized with required scopes; false if UI
+     *         resolution (account picker/consent) is required.
      */
     suspend fun isDriveAuthorized(
         onTokenReceived: suspend (String) -> Unit
@@ -86,9 +101,16 @@ class RoomGuardDrive(
     }
 
     /**
-     * Requests Drive authorization via Google Identity Services.
-     * Returns an [AuthorizationResult] — callers check [hasResolution()].
-     * If resolution is needed, launch the returned PendingIntent.
+     * Initializes the Google Identity Services request for Drive access.
+     *
+     * The request includes scopes for `drive.appdata` (file access), `email`, and `profile`.
+     * Callers should check the resulting [AuthorizationResult.hasResolution] and
+     * launch the provided PendingIntent if necessary.
+     *
+     * AI Agents: This is a low-level GIS call. For a simplified Compose integration,
+     * see `RoomGuardActionHelper.requestAuth`.
+     *
+     * @return The authorization result containing either an access token or an intent for resolution.
      */
     suspend fun requestDriveAuthorization(): AuthorizationResult {
         val request = AuthorizationRequest.builder()
@@ -157,16 +179,17 @@ class RoomGuardDrive(
     // ── Backup ─────────────────────────────────────────────────────────────────
 
     /**
-     * Backs up the database to Drive appDataFolder.
+     * Performs a full backup of the application database to the Google Drive cloud.
      *
-     * Steps:
-     * 1. WAL checkpoint (flush to main file)
-     * 2. Copy DB to temp file
-     * 3. fsync temp file
-     * 4. Find or create file in appDataFolder named [DatabaseProvider.getDatabaseName]
-     * 5. Upload media
-     * 6. Log size mismatch if detected
-     * 7. Clean up temp file
+     * This operation is atomic and follows a high-integrity sequence:
+     * 1. **Checkpoint**: Flushes WAL frames into the main database file via [DatabaseProvider.checkpoint].
+     * 2. **Staging**: Copies the database file to a temporary location to prevent locking.
+     * 3. **Fsync**: Forces a hardware-level sync of the temporary file to ensure data durability.
+     * 4. **Compression**: Optionally compresses the database using GZIP (determined by [RoomGuardConfig.useCompression]).
+     * 5. **Sync**: Uploads the staged file to Drive's hidden `appDataFolder`.
+     *
+     * @param token The OAuth2 access token. If null, the engine attempts to pull from [tokenStore].
+     * @return A [BackupResult] indicating success or details of the failure.
      */
     override suspend fun backup(token: String?): BackupResult<String> =
         withContext(Dispatchers.IO) {
@@ -239,16 +262,19 @@ class RoomGuardDrive(
     // ── Restore ────────────────────────────────────────────────────────────────
 
     /**
-     * Restores database from Drive.
+     * Restores the application database from a backup stored on Google Drive.
      *
-     * If [RestoreConfig.mode] == ATTACH:
-     *   - Uses ATTACH DATABASE + INSERT SELECT for each table
-     *   - DB stays open; Room observers continue working
+     * The engine supports two distinct restoration modes as defined in [RestoreConfig.mode]:
+     * - **[RestoreMode.ATTACH]**: Preferred for Room. Merges or overwrites data via SQL while 
+     *   keeping the primary database connection open and UI observers active.
+     * - **[RestoreMode.REPLACE]**: Performs a raw file-swap. Requires the database connection
+     *   to be closed and restarted.
      *
-     * If [RestoreConfig.mode] == REPLACE:
-     *   - Calls [DatabaseProvider.closeDatabase]
-     *   - Overwrites DB file with temp backup
-     *   - Calls [DatabaseProvider.onRestoreComplete]
+     * Integrity is verified using `PRAGMA quick_check` before any data modification occurs.
+     *
+     * @param token  The OAuth2 access token.
+     * @param config Configuration detailing the tables to restore and the mode to use.
+     * @return A [BackupResult] with success message or error details.
      */
     override suspend fun restore(token: String?, config: RestoreConfig): BackupResult<String> =
         withContext(Dispatchers.IO) {

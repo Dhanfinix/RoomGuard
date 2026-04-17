@@ -7,10 +7,16 @@ import dev.dhanfinix.roomguard.core.DatabaseProvider
 import java.io.File
 
 /**
- * A generic [DatabaseProvider] for any Android Room database.
- * 
- * This removes the need for host applications to implement their own
- * bridge class for RoomGuard.
+ * A generic implementation of [DatabaseProvider] designed specifically for Android Room databases.
+ *
+ * This implementation encapsulates all the necessary boilerplate to bridge Room's architecture
+ * with RoomGuard's backup/restore engine. It handles critical SQLite operations like WAL
+ * checkpointing and transaction management, ensuring that host applications don't need to
+ * implement their own database providers for standard Room usage.
+ *
+ * @param context      The application context used for locating the database file.
+ * @param database     The actual RoomDatabase instance being protected.
+ * @param databaseName The filename of the database on disk.
  */
 class RoomDatabaseProvider(
     private val context: Context,
@@ -24,8 +30,13 @@ class RoomDatabaseProvider(
         return context.getDatabasePath(databaseName).absolutePath
     }
 
+    /**
+     * Executes a full WAL checkpoint using Room's query mechanism.
+     *
+     * This ensures that all pending writes currently in the `-wal` file are merged into
+     * the main `.db` file, making it safe to copy for backup.
+     */
     override suspend fun checkpoint() {
-        // Force a WAL checkpoint to ensure the .db file is up-to-date before backup
         database.query(SimpleSQLiteQuery("PRAGMA wal_checkpoint(FULL)")).use {
             it.moveToFirst()
         }
@@ -37,9 +48,14 @@ class RoomDatabaseProvider(
         }
     }
 
+    /**
+     * Refreshes Room's internal versioning trackers.
+     *
+     * This is critical for reactive UI components. By calling [refreshVersionsAsync],
+     * Room is notified that the underlying data has changed (via restore), triggering
+     * any active Paging, LiveData, or Flow observers to reload immediately.
+     */
     override suspend fun onRestoreComplete() {
-        // Tell Room to refresh its internal versioning trackers
-        // This ensures UI flows (like paging or livedata) refresh immediately
         database.invalidationTracker.refreshVersionsAsync()
     }
 
@@ -47,6 +63,12 @@ class RoomDatabaseProvider(
         database.openHelper.writableDatabase.execSQL(sql)
     }
 
+    /**
+     * Executes batch SQL in a Room-managed transaction.
+     *
+     * Using [RoomDatabase.runInTransaction] ensures that Room's internal state
+     * remains consistent while multiple records are being inserted or updated.
+     */
     override fun executeInTransaction(queries: List<String>) {
         database.runInTransaction {
             val db = database.openHelper.writableDatabase
