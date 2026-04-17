@@ -48,19 +48,45 @@ subprojects {
         }
     }
 
+    // CI Debug Task (Status only, no values leaked)
+    val statusTask = tasks.register("printSigningStatus") {
+        doLast {
+            println("--- Signing Status for ${project.name} ---")
+            // Resolve using direct findProperty which looks at project properties and extraProperties
+            val kId = project.findProperty("GPG_SIGNING_KEY_ID") ?: project.findProperty("signing.keyId") ?: project.findProperty("signingKeyId")
+            val pwd = project.findProperty("GPG_SIGNING_KEY_PASSWORD") ?: project.findProperty("signing.password") ?: project.findProperty("signingPassword")
+            val sKey = project.findProperty("GPG_SIGNING_KEY") ?: project.findProperty("signing.secretKey") ?: project.findProperty("signingKey")
+            
+            println("keyId present: ${kId != null}")
+            println("password present: ${pwd != null}")
+            println("secretKey present: ${sKey != null}")
+            println("-------------------------------------------")
+        }
+    }
+
     // Explicit fallback for in-memory signing across all subprojects
     apply(plugin = "signing")
     extensions.configure<org.gradle.plugins.signing.SigningExtension>("signing") {
-        val keyId = project.findProperty("signing.keyId")?.toString() 
+        // Force the debug task to run before any signing attempt
+        tasks.withType<org.gradle.plugins.signing.Sign>().configureEach {
+            dependsOn(statusTask)
+        }
+
+        val keyId = project.findProperty("GPG_SIGNING_KEY_ID")?.toString()
+            ?: project.findProperty("signing.keyId")?.toString() 
             ?: project.findProperty("signingKeyId")?.toString()
-        val password = project.findProperty("signing.password")?.toString()
+        val password = project.findProperty("GPG_SIGNING_KEY_PASSWORD")?.toString()
+            ?: project.findProperty("signing.password")?.toString()
             ?: project.findProperty("signingPassword")?.toString()
-        val secretKey = project.findProperty("signing.secretKey")?.toString()
+        val secretKey = project.findProperty("GPG_SIGNING_KEY")?.toString()
+            ?: project.findProperty("signing.secretKey")?.toString()
             ?: project.findProperty("signingKey")?.toString()
 
         if (keyId != null && password != null && secretKey != null) {
+            // Handle literal \n if passed as a single line from CI
+            val formattedKey = secretKey.replace("\\n", "\n")
             @Suppress("UnstableApiUsage")
-            useInMemoryPgpKeys(keyId, secretKey, password)
+            useInMemoryPgpKeys(keyId, formattedKey, password)
         }
     }
 
@@ -85,21 +111,6 @@ subprojects {
                     }
                 )
             }
-        }
-    }
-
-    // CI Debug Task (Status only, no values leaked)
-    tasks.register("printSigningStatus") {
-        doLast {
-            println("--- Signing Status for ${project.name} ---")
-            val kId = project.findProperty("signing.keyId") ?: project.findProperty("signingKeyId")
-            val pwd = project.findProperty("signing.password") ?: project.findProperty("signingPassword")
-            val sKey = project.findProperty("signing.secretKey") ?: project.findProperty("signingKey")
-            
-            println("keyId present: ${kId != null}")
-            println("password present: ${pwd != null}")
-            println("secretKey present: ${sKey != null}")
-            println("-------------------------------------------")
         }
     }
 }
