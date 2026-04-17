@@ -6,7 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.hilt) apply false
     alias(libs.plugins.ksp) apply false
-    alias(libs.plugins.maven.publish) apply false
+    alias(libs.plugins.maven.publish) // Applied to root for global Sonatype service management
     alias(libs.plugins.dokka) apply false
 }
 
@@ -15,63 +15,22 @@ allprojects {
     version = "0.0.1-alpha.1"
 }
 
-// Load properties from local.properties if it exists (local development)
-val localProperties = java.util.Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) {
-        load(file.inputStream())
-    }
-}
-
-// Helper to find a property from local.properties, system env, or project properties
-fun findConfig(name: String): String? {
-    return localProperties.getProperty(name)
-        ?: System.getenv(name)
-        ?: System.getenv("ORG_GRADLE_PROJECT_$name")
-        ?: project.findProperty(name)?.toString()
-}
-
-// Root-level property injection (Global visibility)
-// We map both dotted and flat names to support different plugin search patterns.
-mapOf(
-    "MAVEN_CENTRAL_USERNAME" to listOf("mavenCentralUsername", "sonatypeUsername"),
-    "MAVEN_CENTRAL_PASSWORD" to listOf("mavenCentralPassword", "sonatypePassword"),
-    "GPG_SIGNING_KEY_ID" to listOf("signing.keyId", "signingKeyId"),
-    "GPG_SIGNING_KEY_PASSWORD" to listOf("signing.password", "signingPassword"),
-    "GPG_SIGNING_KEY" to listOf("signing.secretKey", "signingKey")
-).forEach { (envKey, gradleKeys) ->
-    findConfig(envKey)?.let { value ->
-        gradleKeys.forEach { key ->
-            // Inject into root project first (important for Sonatype global service)
-            project.extensions.extraProperties.set(key, value)
-        }
-    }
-}
-
 subprojects {
-    // Re-inject into subprojects so each module sees them in its own scope
-    mapOf(
-        "MAVEN_CENTRAL_USERNAME" to listOf("mavenCentralUsername", "sonatypeUsername"),
-        "MAVEN_CENTRAL_PASSWORD" to listOf("mavenCentralPassword", "sonatypePassword"),
-        "GPG_SIGNING_KEY_ID" to listOf("signing.keyId", "signingKeyId"),
-        "GPG_SIGNING_KEY_PASSWORD" to listOf("signing.password", "signingPassword"),
-        "GPG_SIGNING_KEY" to listOf("signing.secretKey", "signingKey")
-    ).forEach { (envKey, gradleKeys) ->
-        findConfig(envKey)?.let { value ->
-            gradleKeys.forEach { key ->
-                project.extensions.extraProperties.set(key, value)
-            }
-        }
-    }
-
+    // Native Property Discovery:
+    // We rely on Gradle's auto-injection from environment variables 
+    // prefixed with ORG_GRADLE_PROJECT_ (e.g., ORG_GRADLE_PROJECT_signingKeyId).
+    
+    // Explicit fallback for in-memory signing across all subprojects
+    apply(plugin = "signing")
+    
     // CI Debug Task (Status only, no values leaked)
     val statusTask = tasks.register("printSigningStatus") {
         doLast {
             println("--- Signing Status for ${project.name} ---")
-            // Resolve using direct findProperty which looks at project properties and extraProperties
-            val kId = project.findProperty("GPG_SIGNING_KEY_ID") ?: project.findProperty("signing.keyId") ?: project.findProperty("signingKeyId")
-            val pwd = project.findProperty("GPG_SIGNING_KEY_PASSWORD") ?: project.findProperty("signing.password") ?: project.findProperty("signingPassword")
-            val sKey = project.findProperty("GPG_SIGNING_KEY") ?: project.findProperty("signing.secretKey") ?: project.findProperty("signingKey")
+            // Resolve using direct findProperty which natively checks ORG_GRADLE_PROJECT_ vars
+            val kId = project.findProperty("signingKeyId") ?: project.findProperty("signing.keyId")
+            val pwd = project.findProperty("signingPassword") ?: project.findProperty("signing.password")
+            val sKey = project.findProperty("signingKey") ?: project.findProperty("signing.secretKey")
             
             println("keyId present: ${kId != null}")
             println("password present: ${pwd != null}")
@@ -80,23 +39,18 @@ subprojects {
         }
     }
 
-    // Explicit fallback for in-memory signing across all subprojects
-    apply(plugin = "signing")
     extensions.configure<org.gradle.plugins.signing.SigningExtension>("signing") {
         // Force the debug task to run before any signing attempt
         tasks.withType<org.gradle.plugins.signing.Sign>().configureEach {
             dependsOn(statusTask)
         }
 
-        val keyId = project.findProperty("GPG_SIGNING_KEY_ID")?.toString()
-            ?: project.findProperty("signing.keyId")?.toString() 
-            ?: project.findProperty("signingKeyId")?.toString()
-        val password = project.findProperty("GPG_SIGNING_KEY_PASSWORD")?.toString()
+        val keyId = project.findProperty("signingKeyId")?.toString()
+            ?: project.findProperty("signing.keyId")?.toString()
+        val password = project.findProperty("signingPassword")?.toString()
             ?: project.findProperty("signing.password")?.toString()
-            ?: project.findProperty("signingPassword")?.toString()
-        val secretKey = project.findProperty("GPG_SIGNING_KEY")?.toString()
+        val secretKey = project.findProperty("signingKey")?.toString()
             ?: project.findProperty("signing.secretKey")?.toString()
-            ?: project.findProperty("signingKey")?.toString()
 
         if (keyId != null && password != null && secretKey != null) {
             // Handle literal \n if passed as a single line from CI
