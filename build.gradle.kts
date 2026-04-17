@@ -24,6 +24,46 @@ subprojects {
         }
     }
 
+    // Helper to find a property from local.properties or System Environment
+    fun findConfig(name: String): String? {
+        return localProperties.getProperty(name) 
+            ?: System.getenv(name) 
+            ?: System.getenv("ORG_GRADLE_PROJECT_$name")
+            ?: project.findProperty(name)?.toString()
+    }
+
+    // Inject properties into the project extension so plugins can see them.
+    // We map both dotted and flat names to support different plugin search patterns.
+    mapOf(
+        "mavenCentralUsername" to listOf("mavenCentralUsername", "sonatypeUsername"),
+        "mavenCentralPassword" to listOf("mavenCentralPassword", "sonatypePassword"),
+        "signingInMemoryKeyId" to listOf("signing.keyId", "signingKeyId"),
+        "signingInMemoryKeyPassword" to listOf("signing.password", "signingPassword"),
+        "signingInMemoryKey" to listOf("signing.secretKey", "signingKey")
+    ).forEach { (envKey, gradleKeys) ->
+        findConfig(envKey)?.let { value ->
+            gradleKeys.forEach { key ->
+                project.extensions.extraProperties.set(key, value)
+            }
+        }
+    }
+
+    // Explicit fallback for in-memory signing across all subprojects
+    apply(plugin = "signing")
+    extensions.configure<org.gradle.plugins.signing.SigningExtension>("signing") {
+        val keyId = project.findProperty("signing.keyId")?.toString() 
+            ?: project.findProperty("signingKeyId")?.toString()
+        val password = project.findProperty("signing.password")?.toString()
+            ?: project.findProperty("signingPassword")?.toString()
+        val secretKey = project.findProperty("signing.secretKey")?.toString()
+            ?: project.findProperty("signingKey")?.toString()
+
+        if (keyId != null && password != null && secretKey != null) {
+            @Suppress("UnstableApiUsage")
+            useInMemoryPgpKeys(keyId, secretKey, password)
+        }
+    }
+
     plugins.withId("com.vanniktech.maven.publish") {
         apply(plugin = "org.jetbrains.dokka")
 
@@ -46,40 +86,20 @@ subprojects {
                 )
             }
         }
-
-        // Explicit fallback for in-memory signing if standard auto-detection fails
-        extensions.configure<org.gradle.plugins.signing.SigningExtension>("signing") {
-            val keyId = project.findProperty("signing.keyId")?.toString()
-            val password = project.findProperty("signing.password")?.toString()
-            val secretKey = project.findProperty("signing.secretKey")?.toString()
-
-            if (keyId != null && password != null && secretKey != null) {
-                @Suppress("UnstableApiUsage")
-                useInMemoryPgpKeys(keyId, secretKey, password)
-            }
-        }
     }
 
-    // Helper to find a property from local.properties or System Environment
-    fun findConfig(name: String): String? {
-        return localProperties.getProperty(name) 
-            ?: System.getenv(name) 
-            ?: System.getenv("ORG_GRADLE_PROJECT_$name")
-            ?: project.findProperty(name)?.toString()
-    }
-
-    // Inject properties into the project extension so plugins can see them.
-    // Standard names for Vanniktech/Signing plugins:
-    // "signing.keyId", "signing.password", "signing.secretKey"
-    mapOf(
-        "mavenCentralUsername" to "mavenCentralUsername",
-        "mavenCentralPassword" to "mavenCentralPassword",
-        "signingInMemoryKeyId" to "signing.keyId",
-        "signingInMemoryKeyPassword" to "signing.password",
-        "signingInMemoryKey" to "signing.secretKey"
-    ).forEach { (envKey, gradleKey) ->
-        findConfig(envKey)?.let { value ->
-            project.extensions.extraProperties.set(gradleKey, value)
+    // CI Debug Task (Status only, no values leaked)
+    tasks.register("printSigningStatus") {
+        doLast {
+            println("--- Signing Status for ${project.name} ---")
+            val kId = project.findProperty("signing.keyId") ?: project.findProperty("signingKeyId")
+            val pwd = project.findProperty("signing.password") ?: project.findProperty("signingPassword")
+            val sKey = project.findProperty("signing.secretKey") ?: project.findProperty("signingKey")
+            
+            println("keyId present: ${kId != null}")
+            println("password present: ${pwd != null}")
+            println("secretKey present: ${sKey != null}")
+            println("-------------------------------------------")
         }
     }
 }

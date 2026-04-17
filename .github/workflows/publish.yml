@@ -28,8 +28,8 @@ jobs:
       - name: Publish all modules
         run: ./gradlew publishToMavenCentral --no-configuration-cache
         env:
-          mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          signingInMemoryKeyId: ${{ secrets.GPG_SIGNING_KEY_ID }}
-          signingInMemoryKeyPassword: ${{ secrets.GPG_SIGNING_KEY_PASSWORD }}
-          signingInMemoryKey: ${{ secrets.GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingKeyId: ${{ secrets.GPG_SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.GPG_SIGNING_KEY_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.GPG_SIGNING_KEY }}
