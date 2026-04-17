@@ -24,6 +24,25 @@ RoomGuard is split into 5 modules to minimize APK size and dependency bloat:
 
 ---
 
+## 🧩 Usage Combinations
+
+Depending on your needs, you can mix and match modules to keep your APK lean:
+
+| Combination | Required Modules | Best For... | Implementation |
+| :--- | :--- | :--- | :--- |
+| **Full Package** | `roomguard` | Complete backup strategy (Cloud + Local) | `RoomGuard.Builder` with all dependencies |
+| **Drive Only** | `roomguard-core`, `roomguard-drive` | Cloud-only sync, zero local footprint | Instantiate `RoomGuardDrive` directly |
+| **Local Only** | `roomguard-core`, `roomguard-local` | Privacy-focused or offline-only backups | Instantiate `RoomGuardLocal` directly |
+| **Core Only** | `roomguard-core` | Custom backup engines (e.g., S3, Dropbox) | Implement `DatabaseProvider` + custom logic |
+
+### 🎨 The UI Layer (`roomguard-ui`)
+The UI module is an **optional plug-and-play layer** that sits on top of any of the above.
+- **Full Setup**: Displays both Cloud and Local options.
+- **Partial Setup**: Automatically hides unavailable options (e.g., if you only have a `driveManager`, the Local UI section is hidden).
+- **Custom Setup**: Use it if your custom logic follows the Manager interfaces.
+
+---
+
 ## 📦 Installation
 
 Add the GitHub Packages repository to your `settings.gradle.kts`:

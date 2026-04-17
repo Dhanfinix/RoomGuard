@@ -16,9 +16,9 @@ import kotlinx.coroutines.launch
  * This keeps roomguard-ui free of Hilt as a transitive dependency.
  */
 class RoomGuardBackupViewModel(
-    private val driveManager: RoomGuardDrive,
-    private val localManager: LocalBackupManager,
-    private val tokenStore: DriveTokenStore,
+    private val driveManager: RoomGuardDrive?,
+    private val localManager: LocalBackupManager?,
+    private val tokenStore: DriveTokenStore?,
     private val defaultRestoreConfig: RestoreConfig
 ) : ViewModel() {
 
@@ -58,19 +58,27 @@ class RoomGuardBackupViewModel(
     // ── Drive Auth ─────────────────────────────────────────────────────────────
 
     private fun refreshStatus() {
+        if (driveManager == null || tokenStore == null) {
+            _uiState.update { it.copy(syncStatus = SyncStatus.Synced) }
+            return
+        }
         setCloudProcessing(true, "Refreshing status...")
         viewModelScope.launch {
             try {
-                val authorized = driveManager.isDriveAuthorized { token ->
-                    tokenStore.saveToken(token)
-                }
+                // Add a 10-second timeout to prevent the UI from hanging
+                val authorized = kotlinx.coroutines.withTimeoutOrNull(10000L) {
+                    driveManager!!.isDriveAuthorized { token ->
+                        tokenStore!!.saveToken(token)
+                    }
+                } ?: false
+                
                 _uiState.update { it.copy(isDriveAuthorized = authorized) }
                 if (authorized) {
                     fetchBackupInfo()
                 } else {
                     _uiState.update {
                         it.copy(
-                            syncStatus = SyncStatus.Checking,
+                            syncStatus = SyncStatus.NotAuthorized,
                             lastBackupDate = null,
                             userEmail = null
                         )
@@ -85,17 +93,19 @@ class RoomGuardBackupViewModel(
     }
 
     private fun requestDriveAuth() {
+        val manager = driveManager ?: return
+        val store = tokenStore ?: return
         setCloudProcessing(true, "Authorizing Drive...")
         viewModelScope.launch {
             try {
-                tokenStore.setAuthorized(true)
-                val result = driveManager.requestDriveAuthorization()
+                store.setAuthorized(true)
+                val result = manager.requestDriveAuthorization()
                 if (result.hasResolution()) {
                     _events.emit(BackupUiEvent.LaunchDriveAuth(result.pendingIntent!!))
                 } else {
                     val token = result.accessToken
                     if (token != null) {
-                        tokenStore.saveToken(token)
+                        store.saveToken(token)
                         _uiState.update { it.copy(isDriveAuthorized = true) }
                         fetchAndHandleFirstConnect(token)
                     }
@@ -109,10 +119,11 @@ class RoomGuardBackupViewModel(
     }
 
     private fun handleAuthResult(token: String?, error: String? = null) {
+        val store = tokenStore ?: return
         if (token != null) {
             viewModelScope.launch {
-                tokenStore.setAuthorized(true)
-                tokenStore.saveToken(token)
+                store.setAuthorized(true)
+                store.saveToken(token)
                 _uiState.update { it.copy(isDriveAuthorized = true) }
                 fetchAndHandleFirstConnect(token)
             }
@@ -136,10 +147,12 @@ class RoomGuardBackupViewModel(
     }
 
     private fun backup() {
+        val manager = driveManager ?: return
+        val store = tokenStore ?: return
         setCloudProcessing(true, "Backing up data...")
         viewModelScope.launch {
-            val token = tokenStore.getToken()
-            when (val result = driveManager.backup(token)) {
+            val token = store.getToken()
+            when (val result = manager.backup(token)) {
                 is BackupResult.Success -> {
                     showSuccess("Backup successful")
                     fetchBackupInfo()
@@ -159,22 +172,18 @@ class RoomGuardBackupViewModel(
     // ── Restore ────────────────────────────────────────────────────────────────
 
     private fun onRestoreRequested(strategy: RestoreStrategy? = null) {
-        // If strategy is already provided, just run it
         if (strategy != null) {
             restore(strategy)
             return
         }
 
-        // Strategy only applies to ATTACH mode
         if (defaultRestoreConfig.mode == RestoreMode.ATTACH) {
             _events.tryEmit(BackupUiEvent.ChooseRestoreStrategy(
                 onStrategySelected = { selected ->
-                    // After selecting strategy, we might still want to warn about local overwrite
                     checkAndRestore(selected)
                 }
             ))
         } else {
-            // REPLACE mode always replaces everything
             checkAndRestore(RestoreStrategy.OVERWRITE)
         }
     }
@@ -191,11 +200,13 @@ class RoomGuardBackupViewModel(
     }
 
     private fun restore(strategy: RestoreStrategy) {
+        val manager = driveManager ?: return
+        val store = tokenStore ?: return
         setCloudProcessing(true, "Restoring data...")
         viewModelScope.launch {
-            val token = tokenStore.getToken()
+            val token = store.getToken()
             val config = defaultRestoreConfig.copy(strategy = strategy)
-            when (val result = driveManager.restore(token, config)) {
+            when (val result = manager.restore(token, config)) {
                 is BackupResult.Success -> showSuccess("Restore successful")
                 is BackupResult.Error   -> {
                     if (result.code == BackupErrorCode.AUTH_EXPIRED || result.code == BackupErrorCode.NOT_AUTHORIZED) {
@@ -216,10 +227,11 @@ class RoomGuardBackupViewModel(
     }
 
     private fun exportLocal() {
+        val manager = localManager ?: return
         val format = _uiState.value.localBackupFormat
         setLocalProcessing(true, "Preparing ${format.title}...")
         viewModelScope.launch {
-            when (val result = localManager.exportLocalBackup(format)) {
+            when (val result = manager.exportLocalBackup(format)) {
                 is BackupResult.Success -> _events.emit(BackupUiEvent.ShareFile(result.data, format.mimeType))
                 is BackupResult.Error   -> showError(result.message)
             }
@@ -228,10 +240,11 @@ class RoomGuardBackupViewModel(
     }
 
     private fun saveLocalToDevice() {
+        val manager = localManager ?: return
         val format = _uiState.value.localBackupFormat
         setLocalProcessing(true, "Preparing ${format.title}...")
         viewModelScope.launch {
-            when (val result = localManager.exportLocalBackup(format)) {
+            when (val result = manager.exportLocalBackup(format)) {
                 is BackupResult.Success -> {
                     val file = java.io.File(result.data)
                     _events.emit(
@@ -262,9 +275,10 @@ class RoomGuardBackupViewModel(
     }
 
     private fun importCsv(uri: String, strategy: RestoreStrategy) {
+        val manager = localManager ?: return
         setLocalProcessing(true, "Importing data...")
         viewModelScope.launch {
-            when (val result = localManager.importFromLocal(uri, strategy)) {
+            when (val result = manager.importFromLocal(uri, strategy)) {
                 is BackupResult.Success -> showSuccess(result.data.message)
                 is BackupResult.Error   -> showError(result.message)
             }
@@ -275,10 +289,12 @@ class RoomGuardBackupViewModel(
     // ── Info ───────────────────────────────────────────────────────────────────
 
     private fun fetchBackupInfo() {
+        val manager = driveManager ?: return
+        val store = tokenStore ?: return
         setCloudProcessing(true, "Checking status...")
         viewModelScope.launch {
-            val token = tokenStore.getToken()
-            when (val result = driveManager.getBackupInfo(token)) {
+            val token = store.getToken()
+            when (val result = manager.getBackupInfo(token)) {
                 is BackupResult.Success -> {
                     result.data?.let { info ->
                         remoteModifiedTime = info.modifiedTime
@@ -302,9 +318,10 @@ class RoomGuardBackupViewModel(
     }
 
     private fun fetchAndHandleFirstConnect(token: String) {
+        val manager = driveManager ?: return
         setCloudProcessing(true, "Checking for existing backup...")
         viewModelScope.launch {
-            when (val result = driveManager.getBackupInfo(token)) {
+            when (val result = manager.getBackupInfo(token)) {
                 is BackupResult.Success -> {
                     val info = result.data
                     if (info?.size != null) {
@@ -333,10 +350,11 @@ class RoomGuardBackupViewModel(
     }
 
     private fun confirmRevokeAccess() {
+        val manager = driveManager ?: return
         _events.tryEmit(BackupUiEvent.ConfirmRevoke(
             onConfirm = {
                 viewModelScope.launch {
-                    driveManager.revokeAccess()
+                    manager.revokeAccess()
                     handleAuthFailureState("Drive access revoked")
                 }
             }
@@ -350,7 +368,7 @@ class RoomGuardBackupViewModel(
             isDriveAuthorized = false,
             lastBackupDate = null,
             userEmail = null,
-            syncStatus = SyncStatus.Checking // Reset to default checking state
+            syncStatus = SyncStatus.NotAuthorized // Reset to disconnected state
         ) }
         showError(message)
     }
@@ -386,9 +404,9 @@ class RoomGuardBackupViewModel(
     // ── Factory ────────────────────────────────────────────────────────────────
 
     class Factory(
-        private val driveManager: RoomGuardDrive,
-        private val localManager: LocalBackupManager,
-        private val tokenStore: DriveTokenStore,
+        private val driveManager: RoomGuardDrive?,
+        private val localManager: LocalBackupManager?,
+        private val tokenStore: DriveTokenStore?,
         private val restoreConfig: RestoreConfig
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

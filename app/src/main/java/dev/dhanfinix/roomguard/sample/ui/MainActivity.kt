@@ -100,9 +100,9 @@ private fun SampleApp(
             }
         ) { padding ->
             RoomGuardBackupScreen(
-                driveManager = roomGuard.driveManager,
-                localManager = roomGuard.localManager,
-                tokenStore = roomGuard.tokenStore,
+                driveManager = roomGuard.driveManager(),
+                localManager = roomGuard.localManager(),
+                tokenStore = roomGuard.tokenStore(),
                 restoreConfig = restoreConfig,
                 modifier = Modifier.padding(padding)
             )

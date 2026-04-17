@@ -8,6 +8,8 @@ import dev.dhanfinix.roomguard.core.DatabaseProvider
 import dev.dhanfinix.roomguard.drive.DriveTokenStore
 import io.mockk.mockk
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
@@ -42,8 +44,8 @@ class RoomGuardBuilderTest {
             .driveClients(authClient, signInClient)
             .build()
 
-        assertEquals("My App", readPrivateString(roomGuard.driveManager, "appName"))
-        assertEquals("My App_backup", readPrivateString(roomGuard.localManager, "filePrefix"))
+        assertEquals("My App", readPrivateString(roomGuard.driveManager(), "appName"))
+        assertEquals("My App_backup", readPrivateString(roomGuard.localManager(), "filePrefix"))
     }
 
     @Test
@@ -57,7 +59,31 @@ class RoomGuardBuilderTest {
             .driveClients(authClient, signInClient)
             .build()
 
-        assertEquals("custom_backup", readPrivateString(roomGuard.localManager, "filePrefix"))
+        assertEquals("custom_backup", readPrivateString(roomGuard.localManager(), "filePrefix"))
+    }
+
+    @Test
+    fun `builder creates only drive manager when only token store is provided`() {
+        val roomGuard = RoomGuard.Builder(context)
+            .appName("My App")
+            .databaseProvider(databaseProvider)
+            .tokenStore(tokenStore)
+            .build()
+
+        assertTrue("Drive manager should be present", roomGuard.driveManager() != null)
+        assertNull("Local manager should be absent", roomGuard.localManager())
+    }
+
+    @Test
+    fun `builder creates only local manager when only csv serializer is provided`() {
+        val roomGuard = RoomGuard.Builder(context)
+            .appName("My App")
+            .databaseProvider(databaseProvider)
+            .csvSerializer(csvSerializer)
+            .build()
+
+        assertNull("Drive manager should be absent", roomGuard.driveManager())
+        assertTrue("Local manager should be present", roomGuard.localManager() != null)
     }
 
     @Test
@@ -74,14 +100,15 @@ class RoomGuardBuilderTest {
         assertThrows(IllegalArgumentException::class.java) {
             RoomGuard.Builder(context)
                 .appName("My App")
-                .databaseProvider(databaseProvider)
                 .tokenStore(tokenStore)
+                .csvSerializer(csvSerializer)
                 .driveClients(authClient, signInClient)
                 .build()
         }
     }
 
-    private fun readPrivateString(target: Any, fieldName: String): String {
+    private fun readPrivateString(target: Any?, fieldName: String): String {
+        requireNotNull(target) { "Target object cannot be null for field reflection" }
         val field: Field = target.javaClass.getDeclaredField(fieldName)
         field.isAccessible = true
         return field.get(target) as String
