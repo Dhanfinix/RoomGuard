@@ -18,7 +18,7 @@ object RoomGuardLocalModule {
      */
     @Provides
     @Singleton
-    fun provideLocalManager(roomGuard: RoomGuard): RoomGuardLocal = roomGuard.localManager
+    fun provideLocalManager(roomGuard: RoomGuard): RoomGuardLocal = roomGuard.localManager()!!
 
     @Provides
     @Singleton

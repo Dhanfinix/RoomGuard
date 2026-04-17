@@ -11,5 +11,6 @@ enum class SyncStatus {
     /** Local data has changed since the last backup */
     LocalNewer,
     /** Remote backup is newer than local — user may want to restore */
-    RemoteNewer
+    RemoteNewer,
+    NotAuthorized
 }

@@ -61,9 +61,9 @@ import java.io.File
  */
 @Composable
 fun RoomGuardBackupScreen(
-    driveManager: RoomGuardDrive,
-    localManager: LocalBackupManager,
-    tokenStore: DriveTokenStore,
+    driveManager: RoomGuardDrive?,
+    localManager: LocalBackupManager?,
+    tokenStore: DriveTokenStore?,
     restoreConfig: RestoreConfig,
     modifier: Modifier = Modifier
 ) {

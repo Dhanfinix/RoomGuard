@@ -44,7 +44,7 @@ object RoomGuardDriveModule {
      */
     @Provides
     @Singleton
-    fun provideDriveManager(roomGuard: RoomGuard): RoomGuardDrive = roomGuard.driveManager
+    fun provideDriveManager(roomGuard: RoomGuard): RoomGuardDrive = roomGuard.driveManager()!!
 
     @Provides
     @Singleton
@@ -54,5 +54,5 @@ object RoomGuardDriveModule {
 
     @Provides
     @Singleton
-    fun provideDriveTokenStore(roomGuard: RoomGuard): DriveTokenStore = roomGuard.tokenStore
+    fun provideDriveTokenStore(roomGuard: RoomGuard): DriveTokenStore = roomGuard.tokenStore()!!
 }
