@@ -35,11 +35,11 @@ subprojects {
     // Inject properties into the project extension so plugins can see them.
     // We map both dotted and flat names to support different plugin search patterns.
     mapOf(
-        "mavenCentralUsername" to listOf("mavenCentralUsername", "sonatypeUsername"),
-        "mavenCentralPassword" to listOf("mavenCentralPassword", "sonatypePassword"),
-        "signingInMemoryKeyId" to listOf("signing.keyId", "signingKeyId"),
-        "signingInMemoryKeyPassword" to listOf("signing.password", "signingPassword"),
-        "signingInMemoryKey" to listOf("signing.secretKey", "signingKey")
+        "MAVEN_CENTRAL_USERNAME" to listOf("mavenCentralUsername", "sonatypeUsername"),
+        "MAVEN_CENTRAL_PASSWORD" to listOf("mavenCentralPassword", "sonatypePassword"),
+        "GPG_SIGNING_KEY_ID" to listOf("signing.keyId", "signingKeyId"),
+        "GPG_SIGNING_KEY_PASSWORD" to listOf("signing.password", "signingPassword"),
+        "GPG_SIGNING_KEY" to listOf("signing.secretKey", "signingKey")
     ).forEach { (envKey, gradleKeys) ->
         findConfig(envKey)?.let { value ->
             gradleKeys.forEach { key ->
