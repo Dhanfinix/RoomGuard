@@ -2,7 +2,7 @@
 
 RoomGuard is a modular, production-ready Android library designed for plug-and-play database backup and restoration. It provides a unified API for **Google Drive** synchronization and **Local Data Portability** (CSV), combined with a polished **Material 3 Compose UI**.
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.dhanfinix.roomguard/roomguard)](https://central.sonatype.com/artifact/io.github.dhanfinix/roomguard)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.dhanfinix/roomguard)](https://central.sonatype.com/artifact/io.github.dhanfinix/roomguard)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
