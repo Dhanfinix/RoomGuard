@@ -569,8 +569,7 @@ class RoomGuardDrive(
             val folderId = getOrCreateDataFolder(drive)
             val blobsFolderId = getOrCreateSubFolder(drive, folderId, "blobs")
 
-            // 2. Serialize database to logical bundle (full sync to support deletion syncing)
-            // The blobDir in serializer should point to a temporary location for export
+            // 2. Serialize database to logical bundle
             val tempBlobDir = java.io.File(context.cacheDir, "roomguard_logical_blobs")
             if (tempBlobDir.exists()) tempBlobDir.deleteRecursively()
             tempBlobDir.mkdirs()
@@ -583,18 +582,34 @@ class RoomGuardDrive(
 
             // 3. Differential BLOB uploads
             val remoteBlobs = listRemoteFiles(drive, blobsFolderId)
-            bundle.blobFiles.forEach { (relativePath, file) ->
-                // relativePath is like "blobs/hash.bin"
+            bundle.blobFiles.forEach { (_, file) ->
                 val fileName = file.name
                 if (fileName !in remoteBlobs) {
                     uploadFileToFolder(drive, blobsFolderId, fileName, file, "application/octet-stream")
                 }
             }
 
-            // 4. Update Metadata CSV
+            // 4. Update Metadata CSV (with compression if enabled)
+            val useGzip = config.useCompression
             val metadataFile = java.io.File(context.cacheDir, "roomguard_metadata.csv")
             metadataFile.writeText(bundle.csvContent)
-            uploadOrUpdateFileInFolder(drive, folderId, METADATA_FILE_NAME, metadataFile, "text/csv")
+
+            val targetFileName = if (useGzip) METADATA_FILE_NAME + GZ_SUFFIX else METADATA_FILE_NAME
+            val mimeType = if (useGzip) GZIP_MIME_TYPE else "text/csv"
+            
+            val uploadFile = if (useGzip) {
+                val compressedMetadata = java.io.File(context.cacheDir, "roomguard_metadata.csv.gz")
+                ZipUtils.compressFile(metadataFile, compressedMetadata)
+                compressedMetadata
+            } else {
+                metadataFile
+            }
+
+            uploadOrUpdateFileInFolder(drive, folderId, targetFileName, uploadFile, mimeType)
+
+            // Cleanup: ensure the "other" format doesn't linger
+            val otherFormatName = if (useGzip) METADATA_FILE_NAME else METADATA_FILE_NAME + GZ_SUFFIX
+            deleteFileIfExist(drive, folderId, otherFormatName)
 
             BackupResult.Success("Incremental backup complete")
         } catch (e: Exception) {
@@ -611,15 +626,30 @@ class RoomGuardDrive(
 
             val serializer = serializer ?: return BackupResult.Error(BackupErrorCode.RESTORE_FAILED, "No CSV serializer provided")
 
-            // 1. Resolve folder and metadata
+            // 1. Resolve folder and metadata (try compressed first)
             val folderId = findFolder(drive, "appDataFolder", this.config.incrementalConfig.dataFolderName)
                 ?: return BackupResult.Error(BackupErrorCode.NO_BACKUP_FOUND, "No incremental backup found")
             
-            val metadataFileId = findFileInFolder(drive, folderId, METADATA_FILE_NAME)
+            val metadataFileId = findFileInFolder(drive, folderId, METADATA_FILE_NAME + GZ_SUFFIX)
+                ?: findFileInFolder(drive, folderId, METADATA_FILE_NAME)
                 ?: return BackupResult.Error(BackupErrorCode.NO_BACKUP_FOUND, "Metadata file not found")
 
-            // 2. Download metadata
-            val csvContent = drive.files().get(metadataFileId).executeMediaAsInputStream().use { it.bufferedReader().readText() }
+            // 2. Download and read metadata
+            val tempMetadata = java.io.File(context.cacheDir, "temp_metadata_download")
+            drive.files().get(metadataFileId).executeMediaAsInputStream().use { input ->
+                tempMetadata.outputStream().use { output -> input.copyTo(output) }
+            }
+
+            val csvContent = if (ZipUtils.isGzipped(tempMetadata)) {
+                val decompressed = java.io.File(context.cacheDir, "temp_metadata_decomp")
+                ZipUtils.decompressFile(tempMetadata, decompressed)
+                val content = decompressed.readText()
+                decompressed.delete()
+                content
+            } else {
+                tempMetadata.readText()
+            }
+            tempMetadata.delete()
 
             // 3. Identify and Download needed blobs
             val blobsFolderId = findFolder(drive, folderId, "blobs")
@@ -628,12 +658,6 @@ class RoomGuardDrive(
             tempBlobDir.mkdirs()
 
             val remoteBlobFiles = if (blobsFolderId != null) listRemoteFiles(drive, blobsFolderId) else emptyMap()
-
-            // We need to parse the CSV roughly to find [FILE]: markers
-            // Or better, let the serializer handle it if we provide a way.
-            // For now, we'll download ALL blobs in the remote folder to the temp dir
-            // to keep it simple, or iterate the CSV.
-            // Iterating CSV is more "Holy Grail" (only download what is used).
             
             val neededBlobs = csvContent.lineSequence()
                 .filter { it.contains("[FILE]:") }
@@ -731,6 +755,17 @@ class RoomGuardDrive(
         } else {
             metadata.parents = listOf(folderId)
             drive.files().create(metadata, media).execute()
+        }
+    }
+
+    private fun deleteFileIfExist(drive: Drive, folderId: String, fileName: String) {
+        try {
+            val fileId = findFileInFolder(drive, folderId, fileName)
+            if (fileId != null) {
+                drive.files().delete(fileId).execute()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG_BACKUP, "Failed to delete stale metadata file: $fileName", e)
         }
     }
 

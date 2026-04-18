@@ -12,7 +12,7 @@ plugins {
 
 allprojects {
     group = "io.github.dhanfinix"
-    version = "0.0.1-alpha.2"
+    version = "0.0.1-alpha.3"
 }
 
 subprojects {

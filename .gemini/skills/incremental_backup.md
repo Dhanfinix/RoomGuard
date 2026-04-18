@@ -16,6 +16,7 @@ Guide the user to set the `backupStrategy` to `INCREMENTAL` in the `RoomGuardCon
 val config = RoomGuardConfig(
     backupStrategy = BackupStrategy.INCREMENTAL,
     blobStrategy = BlobStrategy.FILE_POINTER, // Required for binary differential sync
+    useCompression = true, // Enables GZIP for metadata (.csv.gz) - ON by default
     incrementalConfig = IncrementalConfig(
         trackingColumn = "last_update" // Change tracking key
     )
@@ -45,11 +46,10 @@ data class Item(
 | **Old data persists after restore** | Ensure `RestoreStrategy.OVERWRITE` is used. Incremental backups support "Sync Deletion" strictly via overwrite logic. |
 | **Binary data (Images) missing** | Ensure `BlobStrategy` is set to `FILE_POINTER`. `BASE64` or `NONE` will not utilize the differential sidecar folder. |
 
-## 📦 Data Structure on Google Drive
-
 Backups are stored in a folder (default: `RoomGuard_Data`) within `appDataFolder`:
-- `data.csv`: Master logical manifest.
-- `blobs/`: Folder containing binary files named by their SHA-256 hash (Allows deduplication across different records).
+- `data.csv.gz`: Master logical manifest (Compressed GZIP).
+- `data.csv`: Legacy uncompressed manifest (System handles detection automatically).
+- `blobs/`: Folder containing binary files named by their SHA-256 hash.
 
 ---
 

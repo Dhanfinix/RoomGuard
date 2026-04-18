@@ -15,3 +15,4 @@ build_output*.txt
 *.p12
 *.keystore
 google-services.json
+*/bin/*

@@ -45,7 +45,7 @@ class RoomGuardDriveTest {
             .csvSerializer(mockSerializer)
             .driveClients(mockAuthClient, mockSignInClient)
             .build()
-            .driveManager
+            .driveManager()!!
     }
 
     @Test

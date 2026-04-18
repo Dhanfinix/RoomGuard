@@ -25,7 +25,7 @@ Add the dependencies to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    val version = "0.0.1-alpha.2"
+    val version = "0.0.1-alpha.3"
     implementation("io.github.dhanfinix.roomguard:roomguard:$version")
     implementation("io.github.dhanfinix.roomguard:roomguard-ui:$version")
     
@@ -120,25 +120,27 @@ class MyCustomProvider : DatabaseProvider {
 ### D. Restore Modes
 - **`RestoreMode.ATTACH` (Recommended)**: Merges data into the live database. Observers keep working.
 - **`RestoreMode.REPLACE`**: Physically replaces the `.db` file. Requires closing connections first.
-122: 
-123: ### E. Incremental (Logical) Backups (Premium Sync)
-124: For apps with significant binary data (e.g., thousands of gallery images), raw `.db` uploads are slow and expensive. 
-125: 
-126: RoomGuard's **Incremental Strategy** uses content-based deduplication (SHA-256):
-127: 1.  **Deduplication**: Only new or modified images are uploaded to a hidden sidecar folder.
-128: 2.  **Tracking**: Uses a `last_update` timestamp column to filter changed records.
-129: 3.  **Sync Deletion**: Mirror local deletions to the cloud automatically.
-130: 
-131: ```kotlin
-132: val roomGuard = RoomGuard.Builder(context)
-133:     .database(db, "app.db", tables)
-134:     .config(RoomGuardConfig(
-135:         backupStrategy = BackupStrategy.INCREMENTAL,
-136:         blobStrategy = BlobStrategy.FILE_POINTER,
-137:         incrementalConfig = IncrementalConfig(trackingColumn = "last_update")
-138:     ))
-139:     .build()
-140: ```
+
+### E. Incremental (Logical) Backups (Premium Sync)
+For apps with significant binary data (e.g., thousands of gallery images), raw `.db` uploads are slow and expensive. 
+
+RoomGuard's **Incremental Strategy** uses content-based deduplication (SHA-256):
+1.  **Deduplication**: Only new or modified images are uploaded to a hidden sidecar folder.
+2.  **Tracking**: Uses a `last_update` timestamp column to filter changed records.
+3.  **Sync Deletion**: Mirror local deletions to the cloud automatically.
+4.  **Metadata Compression**: Metadata (`data.csv`) is automatically GZIP compressed (`data.csv.gz`) when syncing to Drive, reducing bandwidth usage by up to 90%.
+
+```kotlin
+val roomGuard = RoomGuard.Builder(context)
+    .database(db, "app.db", tables)
+    .config(RoomGuardConfig(
+        backupStrategy = BackupStrategy.INCREMENTAL,
+        blobStrategy = BlobStrategy.FILE_POINTER,
+        useCompression = true, // Enables GZIP for Drive metadata and Local exports
+        incrementalConfig = IncrementalConfig(trackingColumn = "last_update")
+    ))
+    .build()
+```
 
 ---
 

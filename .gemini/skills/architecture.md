@@ -22,13 +22,18 @@ The library communicates with the host app exclusively through these interfaces:
 
 ## 🔄 Data Flow
 
-1. **Backup**: 
+1. **Physical Backup (Default)**: 
     - `DatabaseProvider.checkpoint()` flushes data to disk.
-    - File is copied to a `roomguard_backup_temp.db` in the cache directory.
-    - File is uploaded to Drive (Cloud) or read as CSV (Local).
-2. **Restore**:
-    - Backup is downloaded to `roomguard_restore_temp.db`.
-    - `RestoreMode` (ATTACH/REPLACE) is applied to merge or swap the live database.
+    - File is copied to a `roomguard_backup_temp.db` in cache.
+    - File is optionally GZipped and uploaded to Drive's `appDataFolder`.
+2. **Logical Sync (Incremental)**:
+    - Tables are serialized to `data.csv.gz` (Metadata).
+    - Binary fields are hashed (SHA-256) and uploaded as sidecar files to `/blobs`.
+    - Differential sync ensures only new/modified blobs are uploaded.
+3. **Restoration**:
+    - Backup is downloaded to a temporary cache location.
+    - `RestoreMode` (ATTACH/REPLACE) is applied for physical backups.
+    - Logical ingestion (CSV) is applied for incremental backups.
 
 ---
 
