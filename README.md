@@ -25,7 +25,7 @@ Add the dependencies to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    val version = "0.0.1-alpha.1"
+    val version = "0.0.1-alpha.2"
     implementation("io.github.dhanfinix.roomguard:roomguard:$version")
     implementation("io.github.dhanfinix.roomguard:roomguard-ui:$version")
     
