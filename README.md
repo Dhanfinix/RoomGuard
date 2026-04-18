@@ -11,6 +11,7 @@ RoomGuard is a modular, production-ready Android library designed for plug-and-p
 
 - **Zero-Config Room Integration**: Protect your entire database with minimal boilerplate.
 - **Google Drive Backup**: Secure, private backup using the `appDataFolder` namespace.
+- **Incremental (Logical) Backups**: Differential binary uploads + CSV metadata—perfect for apps with many images.
 - **Safe Restore Strategy**: Table-level `ATTACH` logic to preserve active Room observers (Flow/LiveData).
 - **Local Data Portability**: Export and Import tables as portable CSV or compressed GZIP files.
 - **Modern UI**: Drop-in Jetpack Compose recovery center with Material 3 design.
@@ -119,6 +120,25 @@ class MyCustomProvider : DatabaseProvider {
 ### D. Restore Modes
 - **`RestoreMode.ATTACH` (Recommended)**: Merges data into the live database. Observers keep working.
 - **`RestoreMode.REPLACE`**: Physically replaces the `.db` file. Requires closing connections first.
+122: 
+123: ### E. Incremental (Logical) Backups (Premium Sync)
+124: For apps with significant binary data (e.g., thousands of gallery images), raw `.db` uploads are slow and expensive. 
+125: 
+126: RoomGuard's **Incremental Strategy** uses content-based deduplication (SHA-256):
+127: 1.  **Deduplication**: Only new or modified images are uploaded to a hidden sidecar folder.
+128: 2.  **Tracking**: Uses a `last_update` timestamp column to filter changed records.
+129: 3.  **Sync Deletion**: Mirror local deletions to the cloud automatically.
+130: 
+131: ```kotlin
+132: val roomGuard = RoomGuard.Builder(context)
+133:     .database(db, "app.db", tables)
+134:     .config(RoomGuardConfig(
+135:         backupStrategy = BackupStrategy.INCREMENTAL,
+136:         blobStrategy = BlobStrategy.FILE_POINTER,
+137:         incrementalConfig = IncrementalConfig(trackingColumn = "last_update")
+138:     ))
+139:     .build()
+140: ```
 
 ---
 
@@ -128,7 +148,8 @@ If you are an AI assistant helping a developer integrate this library, use the p
 
 1.  **GCloud Setup**: [**`setup_guide.md`**](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/setup_guide.md) — Step-by-step for OAuth, SHA-1, and Scopes.
 2.  **Usage Scenarios**: [**`usage_guide.md`**](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/usage_guide.md) — Hilt patterns, custom serialization, and troubleshooting.
-3.  **Main Entry**: [`.gemini/skills/index.md`](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/index.md) — Directory of all architectural skills.
+3.  **Logical Strategy**: [**`incremental_backup.md`**](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/incremental_backup.md) — Content hashing, change tracking, and differential sync.
+4.  **Main Entry**: [`.gemini/skills/index.md`](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/index.md) — Directory of all architectural skills.
 
 ---
 

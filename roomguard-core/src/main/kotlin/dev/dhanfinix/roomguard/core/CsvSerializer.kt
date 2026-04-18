@@ -31,6 +31,15 @@ interface CsvSerializer {
     suspend fun toCsv(): String
 
     /**
+     * Serializes the database content into a [BackupBundle], which includes the metadata CSV
+     * and a reference to sidecar blob files for [BlobStrategy.FILE_POINTER].
+     *
+     * @param since Optional timestamp to filter modified rows for incremental builds.
+     * @return A bundle containing the CSV string and associated files.
+     */
+    suspend fun toBackupBundle(since: Long? = null): BackupBundle = BackupBundle(toCsv())
+
+    /**
      * Parses a CSV-formatted string and imports the records back into the application's database.
      *
      * This method is called during a [RestoreStrategy.MERGE] or [RestoreStrategy.OVERWRITE] restore.
@@ -42,4 +51,11 @@ interface CsvSerializer {
      * @throws Exception if parsing fails or database constraints are violated.
      */
     suspend fun fromCsv(content: String, strategy: RestoreStrategy): ImportSummary
+}
+
+/**
+ * Extension interface for [CsvSerializer] that supports external BLOB storage via a directory.
+ */
+interface BlobCapableSerializer : CsvSerializer {
+    var blobDir: java.io.File?
 }

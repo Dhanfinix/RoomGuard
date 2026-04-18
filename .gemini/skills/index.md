@@ -12,6 +12,7 @@ This directory contains specialized context and rules for Gemini-powered assista
 | [**Entry Point (Facade)**](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/entry_point.md) | How to use and extend the `RoomGuard` facade and builder. |
 | [**Storage Providers**](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/storage_providers.md) | Implementing `DatabaseProvider` and `CsvSerializer`. |
 | [**Restore Strategies**](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/restore_strategies.md) | Deep dive into `ATTACH` vs `REPLACE` SQL logic. |
+| [**Incremental Backups**](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/incremental_backup.md) | **Premium Sync.** Differential blob uploads and change tracking. |
 
 ## 🛠️ For Library Maintainers (Contributors)
 *Skills focused on extending and managing the library itself.*

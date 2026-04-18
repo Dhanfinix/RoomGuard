@@ -171,6 +171,18 @@ class RoomGuard(
                 "driveClients() must provide both authClient and signInClient"
             }
 
+            // Only build LocalManager if a serializer or a database reference is provided
+            val finalSerializer = csvSerializer ?: dbReference?.let { db ->
+                if (config.blobStrategy == BlobStrategy.NONE) {
+                    AutomaticRoomCsvSerializer(db)
+                } else {
+                    BlobRoomCsvSerializer(
+                        database = db,
+                        blobStrategy = config.blobStrategy
+                    )
+                }
+            }
+
             // Only build DriveManager if tokenStore is provided
             val driveManager = run {
                 if (hasCustomDriveClients) {
@@ -180,6 +192,7 @@ class RoomGuard(
                         databaseProvider = resolvedDatabaseProvider,
                         tokenStore = resolvedTokenStore,
                         config = config,
+                        serializer = finalSerializer,
                         authClient = requireNotNull(authClient),
                         signInClient = requireNotNull(signInClient)
                     )
@@ -189,22 +202,8 @@ class RoomGuard(
                         appName = resolvedAppName,
                         databaseProvider = resolvedDatabaseProvider,
                         tokenStore = resolvedTokenStore,
-                        config = config
-                    )
-                }
-            }
-
-            // Only build LocalManager if a serializer or a database reference is provided
-            val finalSerializer = csvSerializer ?: dbReference?.let { db ->
-                if (config.blobStrategy == BlobStrategy.NONE) {
-                    AutomaticRoomCsvSerializer(db)
-                } else {
-                    // We'll refine the blobDir in RoomGuardLocal if needed,
-                    // but for now we create the serializer with a placeholder or null.
-                    // Actually, RoomGuardLocal handles the temporary directory for export/import.
-                    BlobRoomCsvSerializer(
-                        database = db,
-                        blobStrategy = config.blobStrategy
+                        config = config,
+                        serializer = finalSerializer
                     )
                 }
             }

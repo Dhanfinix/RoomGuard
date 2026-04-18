@@ -58,6 +58,7 @@ class RoomGuardDrive(
     private val databaseProvider: DatabaseProvider,
     private val tokenStore: DriveTokenStore,
     private val config: RoomGuardConfig = RoomGuardConfig(),
+    private val serializer: CsvSerializer? = null,
     private val authClient: AuthorizationClient = Identity.getAuthorizationClient(context),
     private val signInClient: SignInClient = Identity.getSignInClient(context)
 ) : DriveBackupManager {
@@ -71,6 +72,7 @@ class RoomGuardDrive(
         private const val TEMP_RESTORE_FILE = "roomguard_restore_temp.db"
         private const val TAG_BACKUP = "RoomGuard:Backup"
         private const val TAG_RESTORE = "RoomGuard:Restore"
+        private const val METADATA_FILE_NAME = "data.csv"
     }
 
     private data class RemoteBackupFile(
@@ -193,6 +195,10 @@ class RoomGuardDrive(
      */
     override suspend fun backup(token: String?): BackupResult<String> =
         withContext(Dispatchers.IO) {
+            if (config.backupStrategy == BackupStrategy.INCREMENTAL) {
+                return@withContext performIncrementalBackup(token)
+            }
+            
             val tempFile = java.io.File(context.cacheDir, TEMP_BACKUP_FILE)
             val compressedFile = java.io.File(context.cacheDir, TEMP_COMPRESSED_FILE)
             try {
@@ -278,6 +284,10 @@ class RoomGuardDrive(
      */
     override suspend fun restore(token: String?, config: RestoreConfig): BackupResult<String> =
         withContext(Dispatchers.IO) {
+            if (this@RoomGuardDrive.config.backupStrategy == BackupStrategy.INCREMENTAL) {
+                return@withContext performIncrementalRestore(token, config)
+            }
+
             val tempFile = java.io.File(context.cacheDir, TEMP_RESTORE_FILE)
             try {
                 val resolvedToken = resolveToken(token)
@@ -545,6 +555,183 @@ class RoomGuardDrive(
 
         val plain = validFiles.firstOrNull() ?: return null
         return RemoteBackupFile(plain.id, isCompressed = false)
+    }
+
+    private suspend fun performIncrementalBackup(token: String?): BackupResult<String> {
+        return try {
+            val resolvedToken = resolveToken(token)
+            val drive = buildDriveService(resolvedToken)
+                ?: return BackupResult.Error(BackupErrorCode.NOT_AUTHORIZED, "Not authorized")
+
+            val serializer = serializer ?: return BackupResult.Error(BackupErrorCode.BACKUP_FAILED, "No CSV serializer provided")
+
+            // 1. Ensure/Resolve the logical data folder
+            val folderId = getOrCreateDataFolder(drive)
+            val blobsFolderId = getOrCreateSubFolder(drive, folderId, "blobs")
+
+            // 2. Serialize database to logical bundle (full sync to support deletion syncing)
+            // The blobDir in serializer should point to a temporary location for export
+            val tempBlobDir = java.io.File(context.cacheDir, "roomguard_logical_blobs")
+            if (tempBlobDir.exists()) tempBlobDir.deleteRecursively()
+            tempBlobDir.mkdirs()
+
+            if (serializer is BlobCapableSerializer) {
+                serializer.blobDir = tempBlobDir
+            }
+
+            val bundle = serializer.toBackupBundle(null)
+
+            // 3. Differential BLOB uploads
+            val remoteBlobs = listRemoteFiles(drive, blobsFolderId)
+            bundle.blobFiles.forEach { (relativePath, file) ->
+                // relativePath is like "blobs/hash.bin"
+                val fileName = file.name
+                if (fileName !in remoteBlobs) {
+                    uploadFileToFolder(drive, blobsFolderId, fileName, file, "application/octet-stream")
+                }
+            }
+
+            // 4. Update Metadata CSV
+            val metadataFile = java.io.File(context.cacheDir, "roomguard_metadata.csv")
+            metadataFile.writeText(bundle.csvContent)
+            uploadOrUpdateFileInFolder(drive, folderId, METADATA_FILE_NAME, metadataFile, "text/csv")
+
+            BackupResult.Success("Incremental backup complete")
+        } catch (e: Exception) {
+            Log.e(TAG_BACKUP, "Incremental backup failed", e)
+            BackupResult.Error(BackupErrorCode.BACKUP_FAILED, "Incremental backup failed: ${e.message}")
+        }
+    }
+
+    private suspend fun performIncrementalRestore(token: String?, config: RestoreConfig): BackupResult<String> {
+        return try {
+            val resolvedToken = resolveToken(token)
+            val drive = buildDriveService(resolvedToken)
+                ?: return BackupResult.Error(BackupErrorCode.NOT_AUTHORIZED, "Not authorized")
+
+            val serializer = serializer ?: return BackupResult.Error(BackupErrorCode.RESTORE_FAILED, "No CSV serializer provided")
+
+            // 1. Resolve folder and metadata
+            val folderId = findFolder(drive, "appDataFolder", this.config.incrementalConfig.dataFolderName)
+                ?: return BackupResult.Error(BackupErrorCode.NO_BACKUP_FOUND, "No incremental backup found")
+            
+            val metadataFileId = findFileInFolder(drive, folderId, METADATA_FILE_NAME)
+                ?: return BackupResult.Error(BackupErrorCode.NO_BACKUP_FOUND, "Metadata file not found")
+
+            // 2. Download metadata
+            val csvContent = drive.files().get(metadataFileId).executeMediaAsInputStream().use { it.bufferedReader().readText() }
+
+            // 3. Identify and Download needed blobs
+            val blobsFolderId = findFolder(drive, folderId, "blobs")
+            val tempBlobDir = java.io.File(context.cacheDir, "roomguard_restore_blobs")
+            if (tempBlobDir.exists()) tempBlobDir.deleteRecursively()
+            tempBlobDir.mkdirs()
+
+            val remoteBlobFiles = if (blobsFolderId != null) listRemoteFiles(drive, blobsFolderId) else emptyMap()
+
+            // We need to parse the CSV roughly to find [FILE]: markers
+            // Or better, let the serializer handle it if we provide a way.
+            // For now, we'll download ALL blobs in the remote folder to the temp dir
+            // to keep it simple, or iterate the CSV.
+            // Iterating CSV is more "Holy Grail" (only download what is used).
+            
+            val neededBlobs = csvContent.lineSequence()
+                .filter { it.contains("[FILE]:") }
+                .map { it.substringAfter("[FILE]:").substringBefore(",") }
+                .toSet()
+
+            for (blobPath in neededBlobs) {
+                val fileName = blobPath.substringAfter("blobs/")
+                val fileId = remoteBlobFiles[fileName]
+                if (fileId != null) {
+                    val destFile = java.io.File(tempBlobDir, blobPath)
+                    destFile.parentFile?.mkdirs()
+                    drive.files().get(fileId).executeMediaAsInputStream().use { input ->
+                        destFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+            }
+
+            // 4. Ingest into database
+            if (serializer is BlobCapableSerializer) {
+                serializer.blobDir = tempBlobDir
+            }
+            serializer.fromCsv(csvContent, config.strategy)
+
+            databaseProvider.onRestoreComplete()
+            BackupResult.Success("Incremental restore complete")
+        } catch (e: Exception) {
+            Log.e(TAG_RESTORE, "Incremental restore failed", e)
+            BackupResult.Error(BackupErrorCode.RESTORE_FAILED, "Incremental restore failed: ${e.message}")
+        }
+    }
+
+    // ── Drive Helpers ──────────────────────────────────────────────────────────
+
+    private fun getOrCreateDataFolder(drive: Drive): String {
+        val folderName = config.incrementalConfig.dataFolderName
+        return findFolder(drive, "appDataFolder", folderName) ?: createFolder(drive, "appDataFolder", folderName)
+    }
+
+    private fun getOrCreateSubFolder(drive: Drive, parentId: String, folderName: String): String {
+        return findFolder(drive, parentId, folderName) ?: createFolder(drive, parentId, folderName)
+    }
+
+    private fun findFolder(drive: Drive, parentId: String, folderName: String): String? {
+        val result = drive.files().list()
+            .setSpaces("appDataFolder")
+            .setQ("name = '$folderName' and '$parentId' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false")
+            .setFields("files(id)")
+            .execute()
+        return result.files?.firstOrNull()?.id
+    }
+
+    private fun createFolder(drive: Drive, parentId: String, folderName: String): String {
+        val metadata = DriveFile().apply {
+            name = folderName
+            mimeType = "application/vnd.google-apps.folder"
+            parents = listOf(parentId)
+        }
+        return drive.files().create(metadata).setFields("id").execute().id
+    }
+
+    private fun listRemoteFiles(drive: Drive, folderId: String): Map<String, String> {
+        val result = drive.files().list()
+            .setSpaces("appDataFolder")
+            .setQ("'$folderId' in parents and trashed = false")
+            .setFields("files(id, name)")
+            .execute()
+        return result.files?.associate { it.name to it.id } ?: emptyMap()
+    }
+
+    private fun findFileInFolder(drive: Drive, folderId: String, fileName: String): String? {
+        val result = drive.files().list()
+            .setSpaces("appDataFolder")
+            .setQ("name = '$fileName' and '$folderId' in parents and trashed = false")
+            .setFields("files(id)")
+            .execute()
+        return result.files?.firstOrNull()?.id
+    }
+
+    private fun uploadFileToFolder(drive: Drive, folderId: String, fileName: String, file: java.io.File, mimeType: String) {
+        val metadata = DriveFile().apply {
+            name = fileName
+            parents = listOf(folderId)
+        }
+        val media = FileContent(mimeType, file)
+        drive.files().create(metadata, media).execute()
+    }
+
+    private fun uploadOrUpdateFileInFolder(drive: Drive, folderId: String, fileName: String, file: java.io.File, mimeType: String) {
+        val existingId = findFileInFolder(drive, folderId, fileName)
+        val metadata = DriveFile().apply { name = fileName }
+        val media = FileContent(mimeType, file)
+        if (existingId != null) {
+            drive.files().update(existingId, metadata, media).execute()
+        } else {
+            metadata.parents = listOf(folderId)
+            drive.files().create(metadata, media).execute()
+        }
     }
 
     /**

@@ -10,5 +10,22 @@ package dev.dhanfinix.roomguard.core
 data class RoomGuardConfig(
     val useCompression: Boolean = true,
     val localBackupFormat: LocalBackupFormat = LocalBackupFormat.COMPRESSED,
-    val blobStrategy: BlobStrategy = BlobStrategy.NONE
+    val blobStrategy: BlobStrategy = BlobStrategy.NONE,
+    val backupStrategy: BackupStrategy = BackupStrategy.PHYSICAL,
+    val incrementalConfig: IncrementalConfig = IncrementalConfig()
+)
+
+/**
+ * Configuration for [BackupStrategy.INCREMENTAL] backups.
+ * 
+ * @param dataFolderName The name of the hidden folder in Google Drive (appDataFolder) 
+ *                       where incremental data is stored.
+ * @param trackingColumn The name of the column used for change tracking. 
+ *                       Default is "last_update". 
+ * @param syncDeletions  If true, rows deleted locally will be synced during restore.
+ */
+data class IncrementalConfig(
+    val dataFolderName: String = "RoomGuard_Data",
+    val trackingColumn: String = "last_update",
+    val syncDeletions: Boolean = true
 )

@@ -5,6 +5,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import dev.dhanfinix.roomguard.core.CsvSerializer
 import dev.dhanfinix.roomguard.core.ImportSummary
 import dev.dhanfinix.roomguard.core.RestoreStrategy
+import dev.dhanfinix.roomguard.core.BackupBundle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.lang.StringBuilder
@@ -50,14 +51,34 @@ class AutomaticRoomCsvSerializer(
         "room_table_modification_log"
     )
 
-    override suspend fun toCsv(): String = withContext(Dispatchers.IO) {
+    override suspend fun toCsv(): String = toBackupBundle(null).csvContent
+
+    override suspend fun toBackupBundle(since: Long?): BackupBundle = withContext(Dispatchers.IO) {
         val db = database.openHelper.readableDatabase
         val tableNames = getTableNames(db)
         val sb = StringBuilder()
 
         for (tableName in tableNames) {
             sb.appendLine("[$tableName]")
-            db.query("SELECT * FROM $tableName").use { cursor ->
+
+            // Check if table has the tracking column
+            var hasTrackingColumn = false
+            db.query("PRAGMA table_info($tableName)").use { pragma ->
+                while (pragma.moveToNext()) {
+                    if (pragma.getString(1) == "last_update") {
+                        hasTrackingColumn = true
+                        break
+                    }
+                }
+            }
+
+            val query = if (since != null && hasTrackingColumn) {
+                "SELECT * FROM $tableName WHERE last_update > $since"
+            } else {
+                "SELECT * FROM $tableName"
+            }
+
+            db.query(query).use { cursor ->
                 val columnNames = cursor.columnNames
                 sb.appendLine(columnNames.joinToString(","))
 
@@ -71,7 +92,7 @@ class AutomaticRoomCsvSerializer(
             sb.appendLine() // Gap between sections
         }
 
-        sb.toString()
+        BackupBundle(sb.toString())
     }
 
     override suspend fun fromCsv(content: String, strategy: RestoreStrategy): ImportSummary = withContext(Dispatchers.IO) {

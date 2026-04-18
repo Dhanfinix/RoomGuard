@@ -4,14 +4,18 @@ import android.database.Cursor
 import android.util.Base64
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
-import dev.dhanfinix.roomguard.core.BlobStrategy
-import dev.dhanfinix.roomguard.core.CsvSerializer
-import dev.dhanfinix.roomguard.core.ImportSummary
-import dev.dhanfinix.roomguard.core.RestoreStrategy
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.lang.StringBuilder
+
+import dev.dhanfinix.roomguard.core.BlobStrategy
+import dev.dhanfinix.roomguard.core.CsvSerializer
+import dev.dhanfinix.roomguard.core.BlobCapableSerializer
+import dev.dhanfinix.roomguard.core.ImportSummary
+import dev.dhanfinix.roomguard.core.RestoreStrategy
+import dev.dhanfinix.roomguard.core.BackupBundle
+import dev.dhanfinix.roomguard.core.HashUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /**
@@ -28,9 +32,9 @@ import java.util.UUID
 class BlobRoomCsvSerializer(
     private val database: RoomDatabase,
     private val blobStrategy: BlobStrategy = BlobStrategy.NONE,
-    var blobDir: File? = null,
+    override var blobDir: File? = null,
     private val excludeTables: List<String> = emptyList()
-) : CsvSerializer {
+) : BlobCapableSerializer {
 
     private val internalTables = listOf(
         "android_metadata",
@@ -43,20 +47,51 @@ class BlobRoomCsvSerializer(
     private val FILE_PREFIX = "[FILE]:"
     private val NULL_MARKER = "[NULL]"
 
-    override suspend fun toCsv(): String = withContext(Dispatchers.IO) {
+    override suspend fun toCsv(): String = toBackupBundle(null).csvContent
+
+    override suspend fun toBackupBundle(since: Long?): BackupBundle = withContext(Dispatchers.IO) {
         val db = database.openHelper.readableDatabase
         val tableNames = getTableNames(db)
         val sb = StringBuilder()
+        val blobFiles = mutableMapOf<String, File>()
 
         for (tableName in tableNames) {
             sb.appendLine("[$tableName]")
-            db.query("SELECT * FROM $tableName").use { cursor ->
+            
+            // Check if table has the tracking column
+            var hasTrackingColumn = false
+            db.query("PRAGMA table_info($tableName)").use { pragma ->
+                while (pragma.moveToNext()) {
+                    if (pragma.getString(1) == "last_update") {
+                        hasTrackingColumn = true
+                        break
+                    }
+                }
+            }
+
+            val query = if (since != null && hasTrackingColumn) {
+                "SELECT * FROM $tableName WHERE last_update > $since"
+            } else {
+                "SELECT * FROM $tableName"
+            }
+
+            db.query(query).use { cursor ->
                 val columnNames = cursor.columnNames
                 sb.appendLine(columnNames.joinToString(","))
 
                 while (cursor.moveToNext()) {
                     val row = (0 until cursor.columnCount).map { i ->
-                        formatValue(cursor, i, tableName)
+                        val value = formatValue(cursor, i, tableName)
+                        
+                        // If it's a file pointer, track it in the bundle
+                        if (value.startsWith(FILE_PREFIX)) {
+                            val relativePath = value.removePrefix(FILE_PREFIX)
+                            val file = File(blobDir, relativePath)
+                            if (file.exists()) {
+                                blobFiles[relativePath] = file
+                            }
+                        }
+                        value
                     }
                     sb.appendLine(row.joinToString(","))
                 }
@@ -64,7 +99,7 @@ class BlobRoomCsvSerializer(
             sb.appendLine() // Gap between sections
         }
 
-        sb.toString()
+        BackupBundle(sb.toString(), blobFiles)
     }
 
     override suspend fun fromCsv(content: String, strategy: RestoreStrategy): ImportSummary = withContext(Dispatchers.IO) {
@@ -175,10 +210,14 @@ class BlobRoomCsvSerializer(
                     BlobStrategy.FILE_POINTER -> {
                         if (blobDir == null) return ""
                         val blob = cursor.getBlob(index)
-                        val fileName = "blobs/${tableName}_${cursor.getColumnName(index)}_${UUID.randomUUID()}.bin"
+                        // Content-based hashing for deduplication
+                        val hash = HashUtils.sha256(blob)
+                        val fileName = "blobs/$hash.bin"
                         val file = File(blobDir, fileName)
-                        file.parentFile?.mkdirs()
-                        file.writeBytes(blob)
+                        if (!file.exists()) {
+                            file.parentFile?.mkdirs()
+                            file.writeBytes(blob)
+                        }
                         FILE_PREFIX + fileName
                     }
                 }
