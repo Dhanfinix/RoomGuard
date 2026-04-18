@@ -1,49 +1,68 @@
 # 🛡️ RoomGuard
 
-RoomGuard is a modular, framework-agnostic Android library designed to provide a robust, production-ready solution for database backup and restoration. It supports seamless **Google Drive** synchronization and **Local backup export/import** with both human-readable CSV and compressed backup formats, all delivered through a polished **Material 3 Compose UI**.
+RoomGuard is a modular, production-ready Android library designed for plug-and-play database backup and restoration. It provides a unified API for **Google Drive** synchronization and **Local Data Portability** (CSV), combined with a polished **Material 3 Compose UI**.
 
-## ✨ Features
-
-- **Zero-Config Room Integration**: Protect your entire database in 3 lines of code.
-- **Google Drive Backup**: Uses the secure `appDataFolder` namespace (hidden from users, accessible only by your app).
-- **Safe Restore Strategy**: Implements native SQLite `ATTACH` pattern to restore individual tables without breaking Room's active `Flow` or `LiveData` observers.
-- **Local Data Portability**: Export and Import database tables as portable CSV or compressed GZIP files.
-- **Unified Architecture**: Single `RoomGuard` instance manages both Cloud and Local engines and their shared configuration.
-- **Modern UI**: Drop-in Jetpack Compose screen with Material 3 design, including loading states and confirmation dialogs.
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.dhanfinix.roomguard/roomguard)](https://central.sonatype.com/artifact/io.github.dhanfinix/roomguard)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
 
-## 🏗️ Architecture
+## ✨ Features
 
-RoomGuard is split into 5 modules to minimize APK size:
-
-1.  **`roomguard-core`**: The contract layer. Contains interfaces and configuration models.
-2.  **`roomguard-drive`**: Cloud engine logic for Google Drive REST API and OAuth.
-3.  **`roomguard-local`**: Local engine for serialization and filesystem operations.
-4.  **`roomguard-ui`**: High-level Compose components and ViewModels.
-5.  **`roomguard`**: The main entry point that unifies all of the above.
+- **Zero-Config Room Integration**: Protect your entire database with minimal boilerplate.
+- **Google Drive Backup**: Secure, private backup using the `appDataFolder` namespace.
+- **Safe Restore Strategy**: Table-level `ATTACH` logic to preserve active Room observers (Flow/LiveData).
+- **Local Data Portability**: Export and Import tables as portable CSV or compressed GZIP files.
+- **Modern UI**: Drop-in Jetpack Compose recovery center with Material 3 design.
+- **Modular Design**: 5 modules to minimize APK size (Core, Drive, Local, UI, Hilt).
 
 ---
 
 ## 📦 Installation
 
-RoomGuard is available on **Maven Central**. Add the unified dependency to your `app/build.gradle.kts`:
+Add the dependencies to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.github.dhanfinix.roomguard:roomguard:0.0.1-alpha.1")
-    implementation("io.github.dhanfinix.roomguard:roomguard-ui:0.0.1-alpha.1")
+    val version = "0.0.1-alpha.1"
+    implementation("io.github.dhanfinix.roomguard:roomguard:$version")
+    implementation("io.github.dhanfinix.roomguard:roomguard-ui:$version")
+    
+    // Optional Hilt Support
+    implementation("io.github.dhanfinix.roomguard:roomguard-hilt:$version")
 }
+```
+
+---
+
+## 🔐 Prerequisites & Setup (Google Drive)
+
+To use the Google Drive cloud backup features, you must configure your project in the **Google Cloud Console**.
+
+### 1. Google Cloud Configuration
+- **Enable Drive API**: Search for "Google Drive API" and enable it for your project.
+- **OAuth Consent Screen**:
+    - Configure the consent screen (External/Internal).
+    - **Required Scope**: Add `https://www.googleapis.com/auth/drive.appdata` to the list of scopes.
+- **Credentials**: Create an **Android OAuth 2.0 Client ID**.
+    - **Package Name**: Must match your app's package name.
+    - **SHA-1 Fingerprint**: Required for both Debug and Release environments.
+        - *Debug*: Run `keytool -list -v -keystore ~/.android/debug.keystore`.
+        - *Release*: Obtain from the Play Console or your release signing key.
+
+### 2. Android Manifest
+Add these permissions to your `AndroidManifest.xml`:
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 ```
 
 ---
 
 ## 🚀 Quick Start (Zero-Config)
 
-With version 0.0.1-alpha.1, RoomGuard now handles all the SQLite/Room boilerplate for you.
-
-### 1. Initialize RoomGuard
-Initialize the engine once in your Application class or Singleton.
+### 1. Initialize
+Initialize RoomGuard once in your Application class or Singleton.
 
 ```kotlin
 val roomGuard = RoomGuard.Builder(context)
@@ -56,35 +75,75 @@ val roomGuard = RoomGuard.Builder(context)
 ```
 
 ### 2. Plug into your UI
-Just drop the `RoomGuardBackupScreen` into your Compose hierarchy and pass the `roomGuard` instance.
+Drop the `RoomGuardBackupScreen` into your Compose hierarchy.
 
 ```kotlin
 @Composable
 fun SettingsScreen() {
-    // Drop-in recovery center
     RoomGuardBackupScreen(roomGuard = roomGuard)
 }
 ```
 
 ---
 
-## 🛠️ Advanced Configuration
+## 🛠️ Use Cases
 
-### Custom Providers
-If you aren't using Room, you can manually implement the bridge interfaces:
-
+### A. Local Data Portability (CSV)
+Export and import specific data as human-readable CSV files. Excellent for inter-app portability or user-managed local backups.
 ```kotlin
-val roomGuard = RoomGuard.Builder(context)
-    .databaseProvider(MyCustomDatabaseProvider())
-    .csvSerializer(MyCustomCsvSerializer())
-    .build()
+// Manual use of the local export engine
+val result = roomGuard.localManager()?.exportToCsv()
 ```
 
-### Restore Modes
-- **`RestoreMode.ATTACH` (Recommended)**: Seamlessly merges data into the live database. Room observers (Flow/LiveData) keep working, and no app restart is required.
-- **`RestoreMode.REPLACE`**: Physically replaces the `.db` file on disk. Requires closing the database connection and re-initializing the app.
+### B. Dependency Injection (Hilt)
+Use the pre-built Hilt modules for clean architecture. Requires providing your `appName` and `databaseProvider`.
+```kotlin
+@Module
+@InstallIn(SingletonComponent::class)
+object AppBackupModule {
+    @Provides
+    @Named("appName")
+    fun provideAppName() = "MyNotesApp"
+}
+```
+
+### C. Custom Database Providers (Non-Room)
+If you use raw SQLite, SQLCipher, or another database engine, implement the bridge interfaces:
+```kotlin
+class MyCustomProvider : DatabaseProvider {
+    override fun getDatabaseFilePath() = "path/to/db"
+    override suspend fun checkpoint() { /* Flush WAL manually */ }
+}
+```
+
+### D. Restore Modes
+- **`RestoreMode.ATTACH` (Recommended)**: Merges data into the live database. Observers keep working.
+- **`RestoreMode.REPLACE`**: Physically replaces the `.db` file. Requires closing connections first.
+
+---
+
+## 🤖 For LLM & AI Agents
+
+If you are an AI assistant helping a developer integrate this library, use the provided **AI Skill Kit** for deep technical context:
+
+1.  **GCloud Setup**: [**`setup_guide.md`**](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/setup_guide.md) — Step-by-step for OAuth, SHA-1, and Scopes.
+2.  **Usage Scenarios**: [**`usage_guide.md`**](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/usage_guide.md) — Hilt patterns, custom serialization, and troubleshooting.
+3.  **Main Entry**: [`.gemini/skills/index.md`](file:///Users/muhammadramdhan/StudioProjects/RoomGuard/.gemini/skills/index.md) — Directory of all architectural skills.
+
+---
+
+## 📐 Architecture
+
+| Module | Purpose |
+|---|---|
+| **`roomguard`** | **The official entry point.** Facade & Builder that unifies all features. |
+| **`roomguard-core`** | Platform-agnostic interfaces (JVM pure). |
+| **`roomguard-drive`** | Google Drive REST API & Auth logic. |
+| **`roomguard-local`** | CSV Serialization & Filesystem tasks. |
+| **`roomguard-ui`** | Material 3 Jetpack Compose Components. |
+| **`roomguard-hilt`** | Hilt Dependency Injection Modules. |
 
 ---
 
 ## 📄 License
-Copyright © 2026 Dhanfinix. Published under the MIT License.
+Copyright © 2026 Dhanfinix. Published under the **MIT License**.
