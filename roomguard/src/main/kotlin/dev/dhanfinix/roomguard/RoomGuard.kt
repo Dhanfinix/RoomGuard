@@ -3,6 +3,8 @@ package dev.dhanfinix.roomguard
 import android.content.Context
 import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.SignInClient
+import dev.dhanfinix.roomguard.core.BlobStrategy
+import dev.dhanfinix.roomguard.local.BlobRoomCsvSerializer
 import dev.dhanfinix.roomguard.core.CsvSerializer
 import dev.dhanfinix.roomguard.core.DatabaseProvider
 import dev.dhanfinix.roomguard.core.RestoreConfig
@@ -69,6 +71,7 @@ class RoomGuard(
         private var restoreConfig: RestoreConfig? = null
         private var authClient: AuthorizationClient? = null
         private var signInClient: SignInClient? = null
+        private var dbReference: RoomDatabase? = null
 
         /**
          * Sets the app name used for creating Google Drive backups.
@@ -103,7 +106,9 @@ class RoomGuard(
         ) = apply {
             databaseProvider = RoomDatabaseProvider(context, db, dbFileName)
             if (allowCsv) {
-                csvSerializer = AutomaticRoomCsvSerializer(db)
+                // We'll defer the actual serializer creation to build() 
+                // but we store the DB reference for now.
+                this.dbReference = db
             }
             if (restoreConfig == null) {
                 restoreConfig = RestoreConfig(tables = tables)
@@ -189,8 +194,22 @@ class RoomGuard(
                 }
             }
 
-            // Only build LocalManager if csvSerializer is provided
-            val localManager = csvSerializer?.let { resolvedSerializer ->
+            // Only build LocalManager if a serializer or a database reference is provided
+            val finalSerializer = csvSerializer ?: dbReference?.let { db ->
+                if (config.blobStrategy == BlobStrategy.NONE) {
+                    AutomaticRoomCsvSerializer(db)
+                } else {
+                    // We'll refine the blobDir in RoomGuardLocal if needed,
+                    // but for now we create the serializer with a placeholder or null.
+                    // Actually, RoomGuardLocal handles the temporary directory for export/import.
+                    BlobRoomCsvSerializer(
+                        database = db,
+                        blobStrategy = config.blobStrategy
+                    )
+                }
+            }
+
+            val localManager = finalSerializer?.let { resolvedSerializer ->
                 RoomGuardLocal(
                     context = context,
                     serializer = resolvedSerializer,

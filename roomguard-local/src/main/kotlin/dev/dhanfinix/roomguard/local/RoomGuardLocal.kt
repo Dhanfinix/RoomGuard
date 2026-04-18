@@ -45,22 +45,59 @@ class RoomGuardLocal(
      * @param format The desired output format (CSV or COMPRESSED).
      * @return A [BackupResult] containing the absolute path to the generated file.
      */
+    /**
+     * Generates a local backup file from the current database state.
+     */
     override suspend fun exportLocalBackup(format: LocalBackupFormat): BackupResult<String> = withContext(Dispatchers.IO) {
         try {
-            val csv = serializer.toCsv()
             val baseName = "${filePrefix}_${System.currentTimeMillis()}"
-            val useGzip = format == LocalBackupFormat.COMPRESSED
+            val useZipBundle = config.blobStrategy == BlobStrategy.FILE_POINTER
             
-            val fileName = "$baseName${format.fileExtension}"
+            val fileName = if (useZipBundle) "$baseName.zip" else "$baseName${format.fileExtension}"
             val file = File(context.cacheDir, fileName)
             
-            if (useGzip) {
-                val tempFile = File(context.cacheDir, "$baseName.csv.tmp")
-                tempFile.writeText(csv)
-                ZipUtils.compressFile(tempFile, file)
-                tempFile.delete()
+            // Choose the correct serializer based on config
+            val activeSerializer = if (config.blobStrategy != BlobStrategy.NONE && serializer is AutomaticRoomCsvSerializer) {
+                // If it's a Room database, upgrade to the blob-aware version
+                val db = (serializer as? AutomaticRoomCsvSerializer)?.let { 
+                    // This is a bit hacky, but AutomaticRoomCsvSerializer has the database
+                    // For now, assume the injected serializer is already configured correctly if provided manually
+                    null 
+                }
+                serializer
             } else {
-                file.writeText(csv)
+                serializer
+            }
+
+            if (useZipBundle) {
+                // FILE_POINTER strategy needs a bundle
+                val bundleDir = File(context.cacheDir, baseName)
+                bundleDir.mkdirs()
+                
+                val csvFile = File(bundleDir, "data.csv")
+                
+                // Inject the bundle directory if the serializer is blob-aware
+                if (activeSerializer is BlobRoomCsvSerializer) {
+                    activeSerializer.blobDir = bundleDir
+                }
+                
+                val csvContent = activeSerializer.toCsv()
+                csvFile.writeText(csvContent)
+                
+                ZipUtils.zipDirectory(bundleDir, file)
+                bundleDir.deleteRecursively()
+            } else {
+                val csv = activeSerializer.toCsv()
+                val useGzip = format == LocalBackupFormat.COMPRESSED
+                
+                if (useGzip) {
+                    val tempFile = File(context.cacheDir, "$baseName.csv.tmp")
+                    tempFile.writeText(csv)
+                    ZipUtils.compressFile(tempFile, file)
+                    tempFile.delete()
+                } else {
+                    file.writeText(csv)
+                }
             }
             
             BackupResult.Success(file.absolutePath)
@@ -71,45 +108,56 @@ class RoomGuardLocal(
 
     // ── Import ─────────────────────────────────────────────────────────────────
 
-    /**
-     * Imports data from a local file URI into the application database.
-     *
-     * This method handles:
-     * 1. Resolving the [Uri] provided by the system's file picker.
-     * 2. Copying the content to a temporary cache file to ensure safe access.
-     * 3. Automatically detecting if the file is GZIP compressed.
-     * 4. Delegating the final parsing and DB insertion to the [serializer].
-     *
-     * @param uri      The system URI string pointing to the backup file.
-     * @param strategy The restoration policy (Merge vs. Overwrite).
-     * @return A [BackupResult] representing the success or failure of the import, including a summary of records processed.
-     */
     override suspend fun importFromLocal(uri: String, strategy: RestoreStrategy): BackupResult<ImportSummary> =
         withContext(Dispatchers.IO) {
             val tempFile = File(context.cacheDir, "roomguard_import_temp")
             try {
                 val parsedUri = Uri.parse(uri)
                 
-                // Copy to temp file to check compression and process safely
                 context.contentResolver.openInputStream(parsedUri)?.use { input ->
                     FileOutputStream(tempFile).use { output ->
                         input.copyTo(output)
                     }
                 } ?: return@withContext BackupResult.Error(BackupErrorCode.IMPORT_FAILED, "Could not open file")
 
-                val content = if (ZipUtils.isGzipped(tempFile)) {
-                    val decompressedFile = File(context.cacheDir, "roomguard_import_decomp")
-                    try {
-                        ZipUtils.decompressFile(tempFile, decompressedFile)
-                        decompressedFile.readText()
-                    } finally {
-                        if (decompressedFile.exists()) decompressedFile.delete()
+                val content: String
+                val blobDir: File?
+
+                when {
+                    ZipUtils.isZip(tempFile) -> {
+                        val unzipDir = File(context.cacheDir, "roomguard_unzipped_${System.currentTimeMillis()}")
+                        unzipDir.mkdirs()
+                        ZipUtils.unzipFile(tempFile, unzipDir)
+                        
+                        val csvFile = File(unzipDir, "data.csv")
+                        content = if (csvFile.exists()) csvFile.readText() else throw Exception("Invalid ZIP backup: data.csv not found")
+                        blobDir = unzipDir
                     }
-                } else {
-                    tempFile.readText()
+                    ZipUtils.isGzipped(tempFile) -> {
+                        val decompressedFile = File(context.cacheDir, "roomguard_import_decomp")
+                        ZipUtils.decompressFile(tempFile, decompressedFile)
+                        content = decompressedFile.readText()
+                        decompressedFile.delete()
+                        blobDir = null
+                    }
+                    else -> {
+                        content = tempFile.readText()
+                        blobDir = null
+                    }
+                }
+
+                // If the serializer is BlobRoomCsvSerializer, we need to provide the blobDir
+                if (serializer is BlobRoomCsvSerializer) {
+                    serializer.blobDir = blobDir
                 }
 
                 val summary = serializer.fromCsv(content, strategy)
+                
+                // Cleanup unzip dir if exists
+                if (ZipUtils.isZip(tempFile)) {
+                    blobDir?.deleteRecursively()
+                }
+                
                 BackupResult.Success(summary)
             } catch (e: Exception) {
                 BackupResult.Error(BackupErrorCode.IMPORT_FAILED, "Import failed: ${e.message}")

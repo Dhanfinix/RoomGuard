@@ -20,6 +20,7 @@
 12. [Integration Guide (Consumer README)](#12-integration-guide-consumer-readme)
 13. [Dependency Versions Locked](#13-dependency-versions-locked)
 14. [Error Codes Reference](#14-error-codes-reference)
+15. [Incremental Backup Specification](#15-incremental-backup-specification)
 
 ---
 
